@@ -13,7 +13,7 @@ try:
         password="mNAMNdLFG4o3GuAsVYAryPPK6ImjO1ey",
         host="dpg-cu714md6l47c73c52cdg-a",
         port="5432",
-        database="postgresql://email_tracking_user:mNAMNdLFG4o3GuAsVYAryPPK6ImjO1ey@dpg-cu714md6l47c73c52cdg-a/email_tracking"
+        database="email-tracking-db"
     )
     if connection_pool:
         print("Connection pool created successfully")
@@ -57,7 +57,20 @@ def get_logs():
         return jsonify({"error": f"Interface error: {e}"}), 500
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {e}"}), 500
-
+        
+@app.route('/logs', methods=['GET'])
+def get_logs():
+    # 로그 조회
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT * FROM email_logs")
+        logs = cursor.fetchall()
+        return {"logs": [{"id": log[0], "email": log[1], "timestamp": log[2].strftime("%Y-%m-%d %H:%M:%S")} for log in logs]}
+        
+# 디버깅용 기본 경로
+@app.route('/')
+def home():
+    return "Flask 앱이 정상적으로 실행 중입니다!"
+    
 # Flask 실행
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
