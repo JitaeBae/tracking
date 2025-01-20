@@ -1,50 +1,63 @@
+from flask import Flask, g, jsonify
+from psycopg2 import pool, DatabaseError, InterfaceError
 import psycopg2
-from flask import Flask, request, send_file
-from datetime import datetime
 
 app = Flask(__name__)
 
-# Render PostgreSQL 연결
-DATABASE_URL = "postgresql://email_tracking_user:mNAMNdLFG4o3GuAsVYAryPPK6ImjO1ey@dpg-cu714md6l47c73c52cdg-a/email_tracking"
-conn = psycopg2.connect(DATABASE_URL, sslmode='require')
+# Connection Pool 설정
+try:
+    connection_pool = pool.SimpleConnectionPool(
+        minconn=1,
+        maxconn=10,
+        user="email_tracking_user",
+        password="mNAMNdLFG4o3GuAsVYAryPPK6ImjO1ey",
+        host="dpg-cu714md6l47c73c52cdg-a",
+        port="5432",
+        database="postgresql://email_tracking_user:mNAMNdLFG4o3GuAsVYAryPPK6ImjO1ey@dpg-cu714md6l47c73c52cdg-a/email_tracking"
+    )
+    if connection_pool:
+        print("Connection pool created successfully")
+except Exception as e:
+    print(f"Error creating connection pool: {e}")
 
-# 데이터베이스 테이블 생성
-with conn.cursor() as cursor:
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS email_logs (
-            id SERIAL PRIMARY KEY,
-            email VARCHAR(255) NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
+# Database 연결 가져오기
+def get_db():
+    if 'db_conn' not in g:
+        try:
+            g.db_conn = connection_pool.getconn()
+            if g.db_conn.closed:
+                raise InterfaceError("Database connection is closed.")
+        except Exception as e:
+            print(f"Error getting database connection: {e}")
+            raise e
+    return g.db_conn
 
-@app.route('/pixel', methods=['GET'])
-def pixel():
-    email = request.args.get('email')
-    if not email:
-        return "이메일 주소가 없습니다!", 400
+# 연결 반환 및 정리
+@app.teardown_appcontext
+def close_db(exception):
+    db_conn = g.pop('db_conn', None)
+    if db_conn is not None:
+        try:
+            connection_pool.putconn(db_conn)
+        except Exception as e:
+            print(f"Error returning connection to pool: {e}")
 
-    # 로그 저장
-    with conn.cursor() as cursor:
-        cursor.execute("INSERT INTO email_logs (email) VALUES (%s)", (email,))
-        conn.commit()
-
-    print(f"{datetime.now()} - {email} - 이메일 열림 확인")
-    return send_file('transparent.png', mimetype='image/png')
-
+# 로그 데이터 가져오기
 @app.route('/logs', methods=['GET'])
 def get_logs():
-    # 로그 조회
-    with conn.cursor() as cursor:
-        cursor.execute("SELECT * FROM email_logs")
-        logs = cursor.fetchall()
-        return {"logs": [{"id": log[0], "email": log[1], "timestamp": log[2].strftime("%Y-%m-%d %H:%M:%S")} for log in logs]}
+    try:
+        conn = get_db()
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM logs")  # 실제 테이블 이름으로 변경 필요
+            logs = cursor.fetchall()
+            return jsonify({"logs": logs})
+    except DatabaseError as e:
+        return jsonify({"error": f"Database error: {e}"}), 500
+    except InterfaceError as e:
+        return jsonify({"error": f"Interface error: {e}"}), 500
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {e}"}), 500
 
-# 디버깅용 기본 경로
-@app.route('/')
-def home():
-    return "Flask 앱이 정상적으로 실행 중입니다!"
-    
+# Flask 실행
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
