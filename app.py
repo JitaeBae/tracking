@@ -1,109 +1,88 @@
-from flask import Flask, g, request, jsonify, send_file
-from psycopg2 import pool
-import os
-from io import BytesIO
+from flask import Flask, request, jsonify
+import psycopg2
 import logging
 
 app = Flask(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL 환경 변수가 설정되지 않았습니다.")
+# PostgreSQL 연결 정보
+DB_CONFIG = {
+    'host': 'postgresql://email_tracking_user:mNAMNdLFG4o3GuAsVYAryPPK6ImjO1ey@dpg-cu714md6l47c73c52cdg-a/email_tracking',        # PostgreSQL 호스트 주소
+    'port': '5432',             # 일반적으로 5432
+    'database': 'email_tracking', # 데이터베이스 이름
+    'user': 'email_tracking_user',    # 사용자 이름
+    'password': 'mNAMNdLFG4o3GuAsVYAryPPK6ImjO1ey' # 비밀번호
+}
 
-try:
-    connection_pool = pool.SimpleConnectionPool(
-        minconn=1,
-        maxconn=10,
-        dsn=f"{DATABASE_URL}?sslmode=require"
-    )
-    print("Connection pool created successfully!")
-except Exception as e:
-    print(f"Error creating connection pool: {e}")
-    raise e
+# 로깅 설정
+logging.basicConfig(level=logging.DEBUG)
 
-def get_db():
-    if 'db_conn' not in g or g.db_conn.closed:
-        g.db_conn = connection_pool.getconn()
-    return g.db_conn
-
-@app.teardown_appcontext
-def close_db(exception):
-    db_conn = g.pop('db_conn', None)
-    if db_conn:
-        connection_pool.putconn(db_conn)
-
-def initialize_table():
+# 데이터베이스 연결 함수
+def get_db_connection():
     try:
-        conn = connection_pool.getconn()
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS email_logs (
-                    id SERIAL PRIMARY KEY,
-                    email VARCHAR(255) NOT NULL,
-                    opened_at TIMESTAMP
-                );
-            """)
-            conn.commit()
-        print("Table initialized successfully!")
+        conn = psycopg2.connect(**DB_CONFIG)
+        logging.info("Database connection established successfully.")
+        return conn
     except Exception as e:
-        print(f"Error initializing table: {e}")
-        raise e
-    finally:
-        if conn:
-            connection_pool.putconn(conn)
+        logging.error(f"Database connection failed: {e}")
+        raise
 
-@app.route('/track_email', methods=['GET'])
-def track_email():
-    email_id = request.args.get('id')
-    if not email_id or not email_id.isdigit():
-        return "Invalid or missing ID", 400
-
-    try:
-        conn = get_db()
-        with conn.cursor() as cursor:
-            cursor.execute(
-                "UPDATE email_logs SET opened_at = NOW() WHERE id = %s",
-                (email_id,)
-            )
-            conn.commit()
-
-        pixel = BytesIO()
-        pixel.write(
-            b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00'
-            b'\xff\xff\xff\x21\xf9\x04\x01\x00\x00\x00\x00\x2c\x00\x00\x00\x00'
-            b'\x01\x00\x01\x00\x00\x02\x02\x44\x01\x00\x3b'
-        )
-        pixel.seek(0)
-        return send_file(pixel, mimetype='image/gif')
-    except Exception as e:
-        logging.error(f"Error tracking email: {e}")
-        return "Internal Server Error", 500
-
+# /logs 엔드포인트
 @app.route('/logs', methods=['GET'])
 def get_logs():
     try:
-        conn = get_db()
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT id, email, opened_at FROM email_logs")
-            logs = cursor.fetchall()
-            return jsonify({
-                "logs": [
-                    {
-                        "id": log[0],
-                        "email": log[1],
-                        "opened_at": log[2].strftime("%Y-%m-%d %H:%M:%S") if log[2] else None
-                    }
-                    for log in logs
-                ]
-            })
-    except Exception as e:
-        logging.error(f"Error fetching logs: {e}")
-        return jsonify({"error": f"Unexpected error: {e}"}), 500
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # SQL 쿼리 실행
+        query = "SELECT id, email, opened_at FROM email_logs LIMIT 100;"
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        
+        # 결과를 JSON 형태로 변환
+        columns = [desc[0] for desc in cursor.description]
+        data = [dict(zip(columns, row)) for row in rows]
+        
+        return jsonify(data)
+    
+    except psycopg2.Error as e:
+        logging.error(f"SQL Error: {e}")
+        return jsonify({'error': 'Database query failed', 'details': str(e)}), 500
+    
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
 
+# /pixel 엔드포인트
+@app.route('/pixel', methods=['GET'])
+def pixel():
+    try:
+        email = request.args.get('email')
+        if not email:
+            return jsonify({'error': 'Email parameter is missing'}), 400
+        
+        # 추가 로직 (예: DB에 기록)
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # DB에 email 기록 (예제)
+        query = "INSERT INTO email_logs (email, opened_at) VALUES (%s, NOW());"
+        cursor.execute(query, (email,))
+        conn.commit()
+        
+        return "Pixel logged successfully", 200
+    
+    except psycopg2.Error as e:
+        logging.error(f"Database error during pixel logging: {e}")
+        return jsonify({'error': 'Database operation failed', 'details': str(e)}), 500
+    
+    finally:
+        if 'conn' in locals() and conn:
+            conn.close()
+
+# 기본 라우트 (테스트용)
 @app.route('/')
-def home():
-    return "Render 환경에서 실행 중입니다!"
+def index():
+    return "Server is running."
 
-if __name__ == "__main__":
-    initialize_table()
+if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
