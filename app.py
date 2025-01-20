@@ -41,5 +41,10 @@ def get_logs():
         logs = cursor.fetchall()
         return {"logs": [{"id": log[0], "email": log[1], "timestamp": log[2].strftime("%Y-%m-%d %H:%M:%S")} for log in logs]}
 
+# 디버깅용 기본 경로
+@app.route('/')
+def home():
+    return "Flask 앱이 정상적으로 실행 중입니다!"
+    
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
