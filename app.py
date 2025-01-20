@@ -1,89 +1,50 @@
-from flask import Flask, request, jsonify
-import psycopg2
-import logging
+from flask import Flask, request, send_file, jsonify
+from io import BytesIO
+from PIL import Image
 import os
+import datetime
 
 app = Flask(__name__)
 
-# 로깅 설정
-logging.basicConfig(level=logging.DEBUG)
+# 트래킹된 이메일 기록을 저장할 디렉토리
+LOG_DIR = "email_logs"
+os.makedirs(LOG_DIR, exist_ok=True)
 
-# PostgreSQL 연결 정보 (환경 변수로 관리)
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'your_host'),         # PostgreSQL 호스트 주소
-    'port': os.getenv('DB_PORT', '5432'),             # PostgreSQL 포트 (기본값: 5432)
-    'database': os.getenv('DB_NAME', 'your_db_name'), # 데이터베이스 이름
-    'user': os.getenv('DB_USER', 'your_username'),    # 사용자 이름
-    'password': os.getenv('DB_PASSWORD', 'your_password') # 비밀번호
-}
+# 이메일 열기 트래킹 정보 기록 함수
+def log_email(email):
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_filename = os.path.join(LOG_DIR, "email_tracking_log.txt")
+    
+    with open(log_filename, "a") as log_file:
+        log_file.write(f"{timestamp} - {email} opened\n")
 
-# 데이터베이스 연결 함수
-def get_db_connection():
-    try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        logging.info("Database connection established successfully.")
-        return conn
-    except Exception as e:
-        logging.error(f"Database connection failed: {e}")
-        raise
+# 이메일 열림을 트래킹하는 픽셀 이미지 반환
+@app.route('/pixel')
+def pixel():
+    email = request.args.get('email')  # 이메일 주소를 URL 파라미터로 받음
+    if email:
+        log_email(email)
+    
+    # 1x1 픽셀 이미지를 생성
+    img = Image.new('RGB', (1, 1), color=(255, 255, 255))  # 흰색 픽셀
+    img_byte_arr = BytesIO()
+    img.save(img_byte_arr, format='PNG')
+    img_byte_arr.seek(0)
+    
+    # 이미지 반환
+    return send_file(img_byte_arr, mimetype='image/png')
 
-# /logs 엔드포인트: 로그 조회
 @app.route('/logs', methods=['GET'])
 def get_logs():
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 로그 데이터를 가져오는 SQL 쿼리
-        query = "SELECT id, email, opened_at FROM email_logs ORDER BY opened_at DESC LIMIT 100;"
-        cursor.execute(query)
-        rows = cursor.fetchall()
-        
-        # 결과를 JSON 형태로 변환
-        columns = [desc[0] for desc in cursor.description]
-        data = [dict(zip(columns, row)) for row in rows]
-        
-        return jsonify(data)  # JSON 형식으로 반환
+    # 이메일 트래킹 로그를 반환
+    log_filename = os.path.join(LOG_DIR, "email_tracking_log.txt")
     
-    except psycopg2.Error as e:
-        logging.error(f"SQL Error: {e}")
-        return jsonify({'error': 'Database query failed', 'details': str(e)}), 500
-    
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
-
-# /pixel 엔드포인트: 이메일 추적 로그 기록
-@app.route('/pixel', methods=['GET'])
-def pixel():
-    try:
-        email = request.args.get('email')
-        if not email:
-            return jsonify({'error': 'Email parameter is missing'}), 400
-        
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        
-        # 이메일을 DB에 기록하는 SQL 쿼리
-        query = "INSERT INTO email_logs (email, opened_at) VALUES (%s, NOW());"
-        cursor.execute(query, (email,))
-        conn.commit()
-        
-        return "Pixel logged successfully", 200
-    
-    except psycopg2.Error as e:
-        logging.error(f"Database error during pixel logging: {e}")
-        return jsonify({'error': 'Database operation failed', 'details': str(e)}), 500
-    
-    finally:
-        if 'conn' in locals() and conn:
-            conn.close()
-
-# 기본 라우트: 서버 상태 확인
-@app.route('/')
-def index():
-    return "Server is running."
+    if os.path.exists(log_filename):
+        with open(log_filename, 'r') as file:
+            logs = file.readlines()
+        return jsonify(logs), 200
+    else:
+        return jsonify({"message": "No logs found"}), 404
 
 if __name__ == '__main__':
-    # Flask 애플리케이션 실행
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True)
