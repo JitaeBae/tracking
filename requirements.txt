@@ -1,5 +1,5 @@
 flask
 pillow
 gunicorn
-Flask==2.2.3
+Flask
 psycopg2
