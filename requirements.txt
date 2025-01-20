@@ -1,4 +1,4 @@
-flask
 pillow
 gunicorn
-psycopg2
+Flask==2.2.3
+psycopg2-binary==2.9.6
