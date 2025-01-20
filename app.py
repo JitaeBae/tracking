@@ -13,7 +13,7 @@ try:
         password="mNAMNdLFG4o3GuAsVYAryPPK6ImjO1ey",
         host="dpg-cu714md6l47c73c52cdg-a",
         port="5432",
-        database="email-tracking-db"
+        database="email_tracking"
     )
     if connection_pool:
         print("Connection pool created successfully")
