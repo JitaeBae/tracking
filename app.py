@@ -6,11 +6,12 @@ import logging
 
 app = Flask(__name__)
 
-# PostgreSQL 연결 설정
+# Render에서 자동으로 주입되는 DATABASE_URL 환경 변수
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL 환경 변수가 설정되지 않았습니다.")
 
+# PostgreSQL 연결 풀 설정
 try:
     connection_pool = pool.SimpleConnectionPool(
         minconn=1,
@@ -51,6 +52,7 @@ def initialize_table():
         print("Table initialized successfully!")
     except Exception as e:
         print(f"Error initializing table: {e}")
+        raise e
     finally:
         if conn:
             connection_pool.putconn(conn)
@@ -59,8 +61,8 @@ def initialize_table():
 @app.route('/track_email', methods=['GET'])
 def track_email():
     email_id = request.args.get('id')  # 이메일 로그 ID
-    if not email_id:
-        return "Invalid request", 400
+    if not email_id or not email_id.isdigit():
+        return "Invalid or missing ID", 400
 
     try:
         conn = get_db()
@@ -110,9 +112,9 @@ def get_logs():
 # 디버깅용 기본 경로
 @app.route('/')
 def home():
-    return "Flask 앱이 픽셀 이메일 트래킹과 함께 실행 중입니다!"
+    return "Render 환경에서 실행 중인 Flask 앱입니다!"
 
 # Flask 실행
 if __name__ == "__main__":
     initialize_table()  # 테이블 초기화
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(host='0.0.0.0', port=5000)
