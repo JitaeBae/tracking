@@ -92,24 +92,27 @@ def view_logs():
 
 # 주기적인 작업: 열람 로그와 발송된 이메일 목록 비교
 def check_email_logs():
-    print("열람 로그와 발송된 이메일 목록을 주기적으로 비교 중...")
-    viewed_logs = []
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "r") as f:
-            reader = csv.reader(f)
-            viewed_logs = list(reader)[1:]  # 열람된 이메일의 전체 정보 가져오기
+    try:
+        print("열람 로그와 발송된 이메일 목록을 주기적으로 비교 중...")
+        viewed_logs = []
+        if os.path.exists(LOG_FILE):
+            with open(LOG_FILE, "r") as f:
+                reader = csv.reader(f)
+                viewed_logs = list(reader)[1:]  # 열람된 이메일의 전체 정보 가져오기
 
-    sent_emails = []
-    if os.path.exists(SENT_EMAILS_FILE):
-        with open(SENT_EMAILS_FILE, "r") as f:
-            reader = csv.reader(f)
-            sent_emails = [row[0] for row in list(reader)[1:]]
+        sent_emails = []
+        if os.path.exists(SENT_EMAILS_FILE):
+            with open(SENT_EMAILS_FILE, "r") as f:
+                reader = csv.reader(f)
+                sent_emails = [row[0] for row in list(reader)[1:]]
 
-    viewed_emails = [log[1] for log in viewed_logs]
-    not_viewed_emails = list(set(sent_emails) - set(viewed_emails))
+        viewed_emails = [log[1] for log in viewed_logs]
+        not_viewed_emails = list(set(sent_emails) - set(viewed_emails))
 
-    print(f"열람된 이메일: {viewed_emails}")
-    print(f"열람되지 않은 이메일: {not_viewed_emails}")
+        print(f"열람된 이메일: {viewed_emails}")
+        print(f"열람되지 않은 이메일: {not_viewed_emails}")
+    except Exception as e:
+        print(f"Scheduler Error: {e}")
 
 # APScheduler 설정
 scheduler = BackgroundScheduler()
