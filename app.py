@@ -54,7 +54,6 @@ def track_email():
     # 투명한 1x1 픽셀 반환
     return send_file("pixel.png", mimetype="image/png")
 
-# 열람 기록 보기
 @app.route("/logs", methods=["GET"])
 def view_logs():
     # 열람 기록 읽기
@@ -70,14 +69,31 @@ def view_logs():
     # 열람된 이메일 주소 목록
     viewed_emails = [log[1] for log in viewed_logs]
 
-    # 열람되지 않은 이메일 계산
-    not_viewed_emails = list(set(sent_emails) - set(viewed_emails))
+    # 이메일별 열람 여부 데이터 생성
+    email_status = []
+    for email in sent_emails:
+        if email in viewed_emails:
+            # 열람된 이메일 정보 가져오기
+            log = next(log for log in viewed_logs if log[1] == email)
+            email_status.append({
+                "email": email,
+                "status": "열람",
+                "timestamp": log[0],
+                "ip": log[2],
+                "user_agent": log[3]
+            })
+        else:
+            # 열람되지 않은 이메일
+            email_status.append({
+                "email": email,
+                "status": "미열람",
+                "timestamp": None,
+                "ip": None,
+                "user_agent": None
+            })
 
-    return render_template(
-        "logs.html",
-        viewed_logs=viewed_logs,
-        not_viewed_emails=not_viewed_emails
-    )
+    return render_template("logs.html", email_status=email_status)
+
 
 if __name__ == "__main__":
     # 로그 파일 초기화
