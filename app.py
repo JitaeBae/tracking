@@ -24,15 +24,21 @@ def upload_emails():
             return "CSV 파일만 업로드 가능합니다.", 400
     return render_template("upload.html")
 
-# 업로드된 이메일 확인
 @app.route("/uploaded-emails", methods=["GET"])
 def view_uploaded_emails():
     emails = []
+    # 파일 존재 여부 확인
     if os.path.exists(SENT_EMAILS_FILE):
         with open(SENT_EMAILS_FILE, "r") as f:
             reader = csv.reader(f)
             emails = list(reader)[1:]  # 첫 줄(헤더) 제외
+    else:
+        # 파일이 없을 경우 메시지 반환
+        return "업로드된 파일이 없습니다.", 404
+
+    # 파일이 존재하면 HTML 템플릿 렌더링
     return render_template("uploaded_emails.html", emails=emails)
+
 
 # 트래킹 엔드포인트
 @app.route("/track", methods=["GET"])
