@@ -4,33 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>이메일 열람 기록</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-        }
-        table, th, td {
-            border: 1px solid #ddd;
-        }
-        th, td {
-            padding: 8px;
-            text-align: center;
-        }
-        th {
-            background-color: #f4f4f4;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-    </style>
 </head>
 <body>
-    <h1>이메일 열람 상태</h1>
+    <h1>이메일 열람 기록</h1>
+    {% if email_status %}
     <table>
         <thead>
             <tr>
@@ -53,5 +30,8 @@
             {% endfor %}
         </tbody>
     </table>
+    {% else %}
+    <p>로그 파일이 없습니다.</p>
+    {% endif %}
 </body>
 </html>
