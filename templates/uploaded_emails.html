@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>업로드된 이메일</title>
+</head>
+<body>
+    <h1>업로드된 이메일 주소</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Email</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for email in emails %}
+            <tr>
+                <td>{{ email[0] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
