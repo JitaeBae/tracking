@@ -56,15 +56,18 @@ def track_email():
     # 투명한 1x1 픽셀 반환
     return send_file("pixel.png", mimetype="image/png")
 
-# 열람 기록 보기
 @app.route("/logs", methods=["GET"])
 def view_logs():
+    # 로그 파일 존재 여부 확인
+    if not os.path.exists(LOG_FILE):
+        # 로그 파일이 없을 경우 메시지 반환
+        return "로그 파일이 없습니다.", 404
+
     # 열람 기록 읽기
     viewed_logs = []
-    if os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "r") as f:
-            reader = csv.reader(f)
-            viewed_logs = list(reader)[1:]  # 열람된 이메일의 전체 정보 가져오기 (헤더 제외)
+    with open(LOG_FILE, "r") as f:
+        reader = csv.reader(f)
+        viewed_logs = list(reader)[1:]  # 첫 줄(헤더) 제외
 
     # 발송된 이메일 읽기
     sent_emails = []
@@ -94,7 +97,9 @@ def view_logs():
                 "user_agent": None
             })
 
+    # 템플릿 렌더링
     return render_template("logs.html", email_status=email_status)
+
 
 # 주기적인 작업: 열람 로그와 발송된 이메일 목록 비교
 def check_email_logs():
