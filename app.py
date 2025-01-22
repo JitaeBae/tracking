@@ -3,12 +3,14 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 import csv
 import os
+import requests  # Self-Ping을 위한 HTTP 요청 라이브러리
 
 app = Flask(__name__)
 
 # 파일 정의
 LOG_FILE = "email_tracking_log.csv"
 SENT_EMAILS_FILE = "sent_emails.csv"
+SELF_PING_URL = "https://tracking-g39r.onrender.com/"  # Replace with your deployed URL on Render
 
 # 서버 상태 확인 엔드포인트
 @app.route("/", methods=["GET"])
@@ -88,6 +90,17 @@ def view_logs():
             })
     return render_template("logs.html", email_status=email_status)
 
+# Self-Ping 작업
+def self_ping():
+    try:
+        response = requests.get(SELF_PING_URL)
+        if response.status_code == 200:
+            print("Self-Ping 성공: 서버가 작동 중입니다.")
+        else:
+            print(f"Self-Ping 실패: 상태 코드 {response.status_code}")
+    except Exception as e:
+        print(f"Self-Ping 오류: {e}")
+
 # 주기적인 작업
 def check_email_logs():
     try:
@@ -114,7 +127,8 @@ def check_email_logs():
 
 # APScheduler 설정
 scheduler = BackgroundScheduler()
-scheduler.add_job(func=check_email_logs, trigger="interval", minutes=10)
+scheduler.add_job(func=check_email_logs, trigger="interval", minutes=10)  # 이메일 로그 비교 작업
+scheduler.add_job(func=self_ping, trigger="interval", minutes=5)  # Self-Ping 작업
 scheduler.start()
 
 if __name__ == "__main__":
