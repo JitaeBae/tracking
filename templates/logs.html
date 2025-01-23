@@ -1,20 +1,56 @@
-<table>
-    <thead>
-        <tr>
-            <th>Timestamp</th>
-            <th>Email</th>
-            <th>IP</th>
-            <th>User-Agent</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for log in email_status %}
-        <tr>
-            <td>{{ log.timestamp }}</td>
-            <td>{{ log.email }}</td>
-            <td>{{ log.ip }}</td>
-            <td>{{ log.user_agent }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logs</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f4f4f4;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        tr:hover {
+            background-color: #f1f1f1;
+        }
+    </style>
+</head>
+<body>
+    <h1>이메일 열람 기록</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>Timestamp (UTC+9, KST)</th>
+                <th>Email</th>
+                <th>IP</th>
+                <th>User-Agent</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in email_status %}
+            <tr>
+                <td>{{ log.timestamp }}</td>
+                <td>{{ log.email }}</td>
+                <td>{{ log.ip }}</td>
+                <td>{{ log.user_agent }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
