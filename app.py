@@ -1,8 +1,11 @@
 from flask import Flask, request, send_file, render_template
+from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime, timedelta
 from PIL import Image
-from datetime import datetime, timedelta, timezone
 import csv
 import os
+import requests
+from pytz import timezone
 
 app = Flask(__name__)
 
@@ -10,7 +13,7 @@ app = Flask(__name__)
 LOG_FILE = "email_tracking_log.csv"
 
 # KST 타임존 정의
-KST = timezone(timedelta(hours=9))
+KST = timezone("Asia/Seoul")
 
 # 픽셀 이미지 생성 함수
 def create_pixel_image():
@@ -34,6 +37,20 @@ def initialize_application():
         create_pixel_image()
         print("픽셀 이미지 생성 완료")
     initialize_log_file()
+
+# SELF PING 함수
+def self_ping():
+    """10분마다 서버를 SELF PING합니다."""
+    url = "https://tracking-g39r.onrender.com/"
+    try:
+        print(f"[{datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S')}] SELF PING 요청을 보냅니다: {url}")
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            print(f"SELF PING 성공: {response.status_code}")
+        else:
+            print(f"SELF PING 실패: {response.status_code}")
+    except Exception as e:
+        print(f"SELF PING 오류: {e}")
 
 # 서버 상태 확인 엔드포인트
 @app.route("/", methods=["GET"])
@@ -77,7 +94,7 @@ def view_logs():
     """열람 기록 보기"""
     if not os.path.exists(LOG_FILE):
         return "로그 파일이 없습니다.", 404
-    
+
     # 로그 파일 읽기
     viewed_logs = []
     with open(LOG_FILE, "r", encoding="utf-8") as f:
@@ -91,6 +108,11 @@ def view_logs():
             })
 
     return render_template("logs.html", email_status=viewed_logs)
+
+# APScheduler 설정
+scheduler = BackgroundScheduler(timezone=KST)
+scheduler.add_job(self_ping, 'interval', minutes=10)  # 10분 간격으로 실행
+scheduler.start()
 
 # 애플리케이션 초기화 호출
 initialize_application()
