@@ -1,8 +1,10 @@
+import threading
+import requests
+import os
 from flask import Flask, request, send_file, render_template
 from PIL import Image
 from datetime import datetime, timedelta, timezone
 import csv
-import os
 
 app = Flask(__name__)
 
@@ -92,8 +94,31 @@ def view_logs():
 
     return render_template("logs.html", email_status=viewed_logs)
 
+# 핑 기능
+def keep_server_alive():
+    """10분마다 서버 핑을 보내는 함수"""
+    def ping():
+        while True:
+            try:
+                # Render에서 실행 중인 서버 URL로 핑 전송
+                server_url = os.environ.get("SERVER_URL", "http://127.0.0.1:5000/")
+                response = requests.get(server_url)
+                print(f"핑 전송 성공: {response.status_code}")
+            except Exception as e:
+                print(f"핑 전송 실패: {e}")
+            
+            # 10분 대기
+            threading.Event().wait(600)
+    
+    # 백그라운드 스레드로 실행
+    thread = threading.Thread(target=ping, daemon=True)
+    thread.start()
+
 # 애플리케이션 초기화 호출
 initialize_application()
 
+# 핑 기능 실행
+keep_server_alive()
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
