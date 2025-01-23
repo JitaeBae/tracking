@@ -4,7 +4,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 import csv
 import os
-import requests  # Self-Ping을 위한 HTTP 요청 라이브러리
+import requests
 
 app = Flask(__name__)
 
@@ -18,9 +18,26 @@ def create_pixel_image():
     pixel_image = Image.new("RGB", (1, 1), (255, 255, 255))  # 1x1 흰색 이미지 생성
     pixel_image.save("pixel.png")  # pixel.png로 저장
 
+# 파일 초기화 함수
+def initialize_log_file():
+    """로그 파일이 없거나 비어있으면 헤더 추가"""
+    try:
+        # 파일이 없거나 비어있으면 헤더 추가
+        if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
+            with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Timestamp", "Email", "Client IP", "User-Agent"])
+            print(f"로그 파일 {LOG_FILE} 초기화 완료")
+    except Exception as e:
+        print(f"로그 파일 초기화 오류: {e}")
+
 # 애플리케이션 시작 시 픽셀 이미지 생성
-if not os.path.exists("pixel.png"):
-    create_pixel_image()
+def initialize_application():
+    if not os.path.exists("pixel.png"):
+        create_pixel_image()
+    
+    # 로그 파일 초기화
+    initialize_log_file()
 
 # 서버 상태 확인 엔드포인트
 @app.route("/", methods=["GET"])
@@ -44,7 +61,7 @@ def upload_emails():
 def view_uploaded_emails():
     emails = []
     if os.path.exists(SENT_EMAILS_FILE):
-        with open(SENT_EMAILS_FILE, "r") as f:
+        with open(SENT_EMAILS_FILE, "r", encoding="utf-8") as f:
             reader = csv.reader(f)
             emails = list(reader)[1:]
     else:
@@ -65,7 +82,7 @@ def track_email():
 
     # 로그 파일에 데이터 기록
     try:
-        with open(LOG_FILE, "a", newline="") as f:
+        with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([timestamp, email, client_ip, user_agent])
         print(f"Tracking email: {email}, IP: {client_ip}, User-Agent: {user_agent}")
@@ -78,20 +95,20 @@ def track_email():
         create_pixel_image()  # 픽셀 이미지 생성 함수 호출
     return send_file("pixel.png", mimetype="image/png")
 
-
 # 열람 기록 보기
 @app.route("/logs", methods=["GET"])
 def view_logs():
     if not os.path.exists(LOG_FILE):
         return "로그 파일이 없습니다.", 404
+    
     viewed_logs = []
-    with open(LOG_FILE, "r") as f:
+    with open(LOG_FILE, "r", encoding="utf-8") as f:
         reader = csv.reader(f)
         viewed_logs = list(reader)[1:]
 
     sent_emails = []
     if os.path.exists(SENT_EMAILS_FILE):
-        with open(SENT_EMAILS_FILE, "r") as f:
+        with open(SENT_EMAILS_FILE, "r", encoding="utf-8") as f:
             reader = csv.reader(f)
             sent_emails = [row[0] for row in list(reader)[1:]]
 
@@ -133,13 +150,13 @@ def check_email_logs():
         print("열람 로그와 발송된 이메일 목록을 주기적으로 비교 중...")
         viewed_logs = []
         if os.path.exists(LOG_FILE):
-            with open(LOG_FILE, "r") as f:
+            with open(LOG_FILE, "r", encoding="utf-8") as f:
                 reader = csv.reader(f)
                 viewed_logs = list(reader)[1:]
 
         sent_emails = []
         if os.path.exists(SENT_EMAILS_FILE):
-            with open(SENT_EMAILS_FILE, "r") as f:
+            with open(SENT_EMAILS_FILE, "r", encoding="utf-8") as f:
                 reader = csv.reader(f)
                 sent_emails = [row[0] for row in list(reader)[1:]]
 
@@ -157,9 +174,8 @@ scheduler.add_job(func=check_email_logs, trigger="interval", minutes=10)  # 이�
 scheduler.add_job(func=self_ping, trigger="interval", minutes=5)  # Self-Ping 작업
 scheduler.start()
 
+# 애플리케이션 시작 전 초기화 호출
+initialize_application()
+
 if __name__ == "__main__":
-    if not os.path.exists(LOG_FILE):
-        with open(LOG_FILE, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["Timestamp", "Email", "Client IP", "User-Agent"])
     app.run(host="0.0.0.0", port=5000)
