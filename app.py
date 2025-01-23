@@ -1,6 +1,6 @@
 from flask import Flask, request, send_file, render_template
 from PIL import Image
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import csv
 import os
 
@@ -8,6 +8,9 @@ app = Flask(__name__)
 
 # 파일 정의
 LOG_FILE = "email_tracking_log.csv"
+
+# KST 타임존 정의
+KST = timezone(timedelta(hours=9))
 
 # 픽셀 이미지 생성 함수
 def create_pixel_image():
@@ -21,13 +24,15 @@ def initialize_log_file():
     if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
         with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
-            writer.writerow(["Timestamp", "Email", "Client IP", "User-Agent"])
+            writer.writerow(["Timestamp (UTC+9, KST)", "Email", "Client IP", "User-Agent"])
+        print("로그 파일 초기화 완료")
 
 # 애플리케이션 초기화
 def initialize_application():
     """애플리케이션 초기화 작업."""
     if not os.path.exists("pixel.png"):
         create_pixel_image()
+        print("픽셀 이미지 생성 완료")
     initialize_log_file()
 
 # 서버 상태 확인 엔드포인트
@@ -48,14 +53,15 @@ def track_email():
         print("이메일 파라미터가 없습니다.")
         return "이메일 파라미터가 없습니다.", 400
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # KST 타임스탬프 생성
+    timestamp = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
 
     # 로그 파일에 데이터 기록
     try:
         with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([timestamp, email, client_ip, user_agent])
-        print(f"Tracking email: {email}, IP: {client_ip}, User-Agent: {user_agent}")
+        print(f"Tracking email: {email}, IP: {client_ip}, User-Agent: {user_agent}, Timestamp: {timestamp}")
     except Exception as e:
         print(f"로그 파일 쓰기 오류: {e}")
         return "로그 파일 쓰기 오류", 500
@@ -78,7 +84,7 @@ def view_logs():
         reader = csv.reader(f)
         for row in list(reader)[1:]:  # 첫 번째 줄(헤더) 제외
             viewed_logs.append({
-                "timestamp": row[0],
+                "timestamp": f"{row[0]} (UTC+9, KST)",
                 "email": row[1],
                 "ip": row[2],
                 "user_agent": row[3]
