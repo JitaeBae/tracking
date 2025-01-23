@@ -1,37 +1,20 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>이메일 열람 기록</title>
-</head>
-<body>
-    <h1>이메일 열람 기록</h1>
-    {% if email_status %}
-    <table>
-        <thead>
-            <tr>
-                <th>Email</th>
-                <th>Status</th>
-                <th>Timestamp</th>
-                <th>IP</th>
-                <th>User-Agent</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for email in email_status %}
-            <tr>
-                <td>{{ email.email }}</td>
-                <td>{{ email.status }}</td>
-                <td>{{ email.timestamp if email.timestamp else 'N/A' }}</td>
-                <td>{{ email.ip if email.ip else 'N/A' }}</td>
-                <td>{{ email.user_agent if email.user_agent else 'N/A' }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-    <p>로그 파일이 없습니다.</p>
-    {% endif %}
-</body>
-</html>
+<table>
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>Email</th>
+            <th>IP</th>
+            <th>User-Agent</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for log in email_status %}
+        <tr>
+            <td>{{ log.timestamp }}</td>
+            <td>{{ log.email }}</td>
+            <td>{{ log.ip }}</td>
+            <td>{{ log.user_agent }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
