@@ -3,54 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Logs</title>
+    <title>Email Logs</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
+            padding: 0;
         }
         table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
         }
-        th, td {
+        table, th, td {
             border: 1px solid #ddd;
-            padding: 8px;
+        }
+        th, td {
+            padding: 10px;
             text-align: left;
         }
         th {
             background-color: #f4f4f4;
         }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        tr:hover {
-            background-color: #f1f1f1;
-        }
     </style>
 </head>
 <body>
-    <h1>이메일 열람 기록</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>Timestamp (UTC+9, KST)</th>
-                <th>Email</th>
-                <th>IP</th>
-                <th>User-Agent</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for log in email_status %}
-            <tr>
-                <td>{{ log.timestamp }}</td>
-                <td>{{ log.email }}</td>
-                <td>{{ log.ip }}</td>
-                <td>{{ log.user_agent }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <h1>Email Tracking Logs</h1>
+    {% if email_status %}
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Email</th>
+                    <th>Send Time</th>
+                    <th>Read Time (UTC+9, KST)</th>
+                    <th>Client IP</th>
+                    <th>User-Agent</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in email_status %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ log.email }}</td>
+                        <td>{{ log.send_time }}</td>
+                        <td>{{ log.timestamp }}</td>
+                        <td>{{ log.ip }}</td>
+                        <td>{{ log.user_agent }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>No logs available.</p>
+    {% endif %}
 </body>
 </html>
