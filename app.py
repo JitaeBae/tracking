@@ -8,8 +8,8 @@ import csv
 
 app = Flask(__name__)
 
-# 파일 정의
-LOG_FILE = "email_tracking_log.csv"
+# 파일 정의 (Render 환경에서 /tmp 디렉터리를 사용)
+LOG_FILE = "/tmp/email_tracking_log.csv"
 
 # KST 타임존 정의
 KST = timezone(timedelta(hours=9))
@@ -18,16 +18,19 @@ KST = timezone(timedelta(hours=9))
 def create_pixel_image():
     """픽셀 이미지를 생성하여 저장합니다."""
     pixel_image = Image.new("RGB", (1, 1), (255, 255, 255))  # 1x1 흰색 이미지 생성
-    pixel_image.save("pixel.png")  # pixel.png로 저장
+    pixel_image.save("/tmp/pixel.png")  # /tmp/pixel.png로 저장
 
 # 파일 초기화 함수
 def initialize_log_file():
     """로그 파일이 없거나 비어있으면 헤더를 추가합니다."""
-    if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
-        with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            writer.writerow(["Timestamp (UTC+9, KST)", "Email", "Client IP", "User-Agent"])
-        print("로그 파일 초기화 완료")
+    try:
+        if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
+            with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["Timestamp (UTC+9, KST)", "Email", "Client IP", "User-Agent"])
+            print("로그 파일 초기화 완료")
+    except Exception as e:
+        print(f"로그 파일 초기화 오류: {e}")
 
 # 서버 상태 확인 엔드포인트
 @app.route("/", methods=["GET"])
@@ -61,9 +64,9 @@ def track_email():
         return "로그 파일 쓰기 오류", 500
 
     # 픽셀 이미지 반환
-    if not os.path.exists("pixel.png"):
+    if not os.path.exists("/tmp/pixel.png"):
         create_pixel_image()
-    return send_file("pixel.png", mimetype="image/png")
+    return send_file("/tmp/pixel.png", mimetype="image/png")
 
 # 열람 기록 보기
 @app.route("/logs", methods=["GET"])
@@ -109,7 +112,7 @@ def keep_server_alive():
 # 애플리케이션 초기화
 def initialize_application():
     """애플리케이션 초기화 작업"""
-    if not os.path.exists("pixel.png"):
+    if not os.path.exists("/tmp/pixel.png"):
         create_pixel_image()
         print("픽셀 이미지 생성 완료")
     initialize_log_file()
