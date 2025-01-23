@@ -1,4 +1,5 @@
 from flask import Flask, request, send_file, render_template, redirect, url_for
+from PIL import Image
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 import csv
@@ -11,6 +12,15 @@ app = Flask(__name__)
 LOG_FILE = "email_tracking_log.csv"
 SENT_EMAILS_FILE = "sent_emails.csv"
 SELF_PING_URL = "https://tracking-g39r.onrender.com/"  # Replace with your deployed URL on Render
+
+# 픽셀 이미지 생성 함수
+def create_pixel_image():
+    pixel_image = Image.new("RGB", (1, 1), (255, 255, 255))  # 1x1 흰색 이미지 생성
+    pixel_image.save("pixel.png")  # pixel.png로 저장
+
+# 애플리케이션 시작 시 픽셀 이미지 생성
+if not os.path.exists("pixel.png"):
+    create_pixel_image()
 
 # 서버 상태 확인 엔드포인트
 @app.route("/", methods=["GET"])
@@ -41,17 +51,33 @@ def view_uploaded_emails():
         return "업로드된 파일이 없습니다.", 404
     return render_template("uploaded_emails.html", emails=emails)
 
-# 트래킹 엔드포인트
 @app.route("/track", methods=["GET"])
 def track_email():
     client_ip = request.remote_addr
     user_agent = request.headers.get("User-Agent")
     email = request.args.get("email")
+
+    if not email:
+        print("이메일 파라미터가 없습니다.")
+        return "이메일 파라미터가 없습니다.", 400
+
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(LOG_FILE, "a", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow([timestamp, email, client_ip, user_agent])
+
+    # 로그 파일에 데이터 기록
+    try:
+        with open(LOG_FILE, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([timestamp, email, client_ip, user_agent])
+        print(f"Tracking email: {email}, IP: {client_ip}, User-Agent: {user_agent}")
+    except Exception as e:
+        print(f"로그 파일 쓰기 오류: {e}")
+        return "로그 파일 쓰기 오류", 500
+
+    # 픽셀 이미지 반환
+    if not os.path.exists("pixel.png"):
+        create_pixel_image()  # 픽셀 이미지 생성 함수 호출
     return send_file("pixel.png", mimetype="image/png")
+
 
 # 열람 기록 보기
 @app.route("/logs", methods=["GET"])
