@@ -29,14 +29,6 @@ def initialize_log_file():
             writer.writerow(["Timestamp (UTC+9, KST)", "Email", "Client IP", "User-Agent"])
         print("로그 파일 초기화 완료")
 
-# 애플리케이션 초기화
-def initialize_application():
-    """애플리케이션 초기화 작업."""
-    if not os.path.exists("pixel.png"):
-        create_pixel_image()
-        print("픽셀 이미지 생성 완료")
-    initialize_log_file()
-
 # 서버 상태 확인 엔드포인트
 @app.route("/", methods=["GET"])
 def home():
@@ -114,11 +106,16 @@ def keep_server_alive():
     thread = threading.Thread(target=ping, daemon=True)
     thread.start()
 
-# 애플리케이션 초기화 호출
-initialize_application()
+# 애플리케이션 초기화
+def initialize_application():
+    """애플리케이션 초기화 작업"""
+    if not os.path.exists("pixel.png"):
+        create_pixel_image()
+        print("픽셀 이미지 생성 완료")
+    initialize_log_file()
 
-# 핑 기능 실행
-keep_server_alive()
-
+# 애플리케이션 실행
 if __name__ == "__main__":
+    initialize_application()  # 초기화 작업은 여기서만 실행
+    keep_server_alive()  # 핑 기능 실행
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
