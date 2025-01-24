@@ -112,25 +112,36 @@ def track_email():
     # 픽셀 이미지 반환
     return send_file(create_pixel_image(), mimetype="image/png")
 
-# 열람 기록 보기
-@app.route("/logs", methods=["GET"])
+@app.route("/logs", methods=["GET", "POST"])
 def view_logs():
-    """열람 기록 보기"""
-    logs = read_csv(LOG_FILE)
-    if not logs:
-        return jsonify({"error": "로그 파일이 없습니다."}), 404
+    """열람 기록 보기 및 초기화 버튼"""
+    if request.method == "POST":
+        reset_csv_file(LOG_FILE, ["Timestamp (UTC+9, KST)", "Email", "Send Time", "Client IP", "User-Agent"])
+        return redirect(url_for("view_logs"))
 
+    # CSV 파일 읽기
+    logs = read_csv(LOG_FILE)
+    print(f"현재 읽은 로그 데이터: {logs}")  # 디버깅 출력
+
+    if not logs or len(logs) <= 1:  # 헤더만 있는 경우
+        return render_template("logs.html", email_status=[], feedback_message="No logs available.")
+
+    # 로그 데이터 가공
     viewed_logs = []
     for row in logs[1:]:  # 첫 번째 줄(헤더) 제외
         viewed_logs.append({
-            "timestamp": f"{row[0]} (UTC+9, KST)",
+            "timestamp": row[0],
             "email": row[1],
             "send_time": row[2],
             "ip": row[3],
             "user_agent": row[4]
         })
 
-    return jsonify(viewed_logs), 200
+    print(f"가공된 로그 데이터: {viewed_logs}")  # 디버깅 출력
+
+    # 템플릿으로 데이터 전달
+    return render_template("logs.html", email_status=viewed_logs, feedback_message=None)
+
 
 # 핑 기능
 def keep_server_alive(enabled=True):
