@@ -153,7 +153,7 @@ def view_logs():
 # 핑 기능
 def ping_server():
     """서버 상태를 확인하는 핑 기능"""
-    server_url = os.getenv("SERVER_URL", "http://localhost:5000")
+    server_url = os.getenv("SERVER_URL", "https://tracking-g39r.onrender.com")
     try:
         response = requests.get(server_url)
         if response.status_code == 200:
