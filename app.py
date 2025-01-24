@@ -5,6 +5,7 @@ from flask import Flask, request, send_file, render_template
 from PIL import Image
 from datetime import datetime, timedelta, timezone
 import csv
+import time
 
 app = Flask(__name__)
 
@@ -18,29 +19,38 @@ KST = timezone(timedelta(hours=9))
 # 픽셀 이미지 생성 함수
 def create_pixel_image():
     """픽셀 이미지를 생성하여 저장합니다."""
-    pixel_image = Image.new("RGB", (1, 1), (255, 255, 255))  # 1x1 흰색 이미지 생성
-    pixel_image.save("/tmp/pixel.png")  # /tmp/pixel.png로 저장
+    pixel_path = "/tmp/pixel.png"
+    if not os.path.exists(pixel_path):
+        pixel_image = Image.new("RGB", (1, 1), (255, 255, 255))  # 1x1 흰색 이미지 생성
+        pixel_image.save(pixel_path)
+        print("픽셀 이미지 생성 완료")
+    return pixel_path
 
-# 로그 파일 초기화 함수
-def initialize_log_file():
-    """로그 파일이 없거나 비어있으면 헤더를 추가합니다."""
+# CSV 파일 초기화
+def initialize_csv_file(file_path, headers):
+    """CSV 파일 초기화 함수"""
+    if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+        try:
+            with open(file_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+            print(f"CSV 파일 초기화 완료: {file_path}")
+        except Exception as e:
+            print(f"CSV 초기화 오류: {e}")
+
+# CSV 파일 로드
+def read_csv(file_path):
+    """CSV 파일 로드 함수"""
+    if not os.path.exists(file_path):
+        return []
     try:
-        # 열람 기록 초기화
-        if not os.path.exists(LOG_FILE) or os.path.getsize(LOG_FILE) == 0:
-            with open(LOG_FILE, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["Timestamp (UTC+9, KST)", "Email", "Send Time", "Client IP", "User-Agent"])
-            print("열람 기록 파일 초기화 완료")
-        # 발송 기록 초기화
-        if not os.path.exists(SEND_LOG_FILE) or os.path.getsize(SEND_LOG_FILE) == 0:
-            with open(SEND_LOG_FILE, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["Email", "Send Time"])
-            print("발송 기록 파일 초기화 완료")
+        with open(file_path, "r", encoding="utf-8") as f:
+            return list(csv.reader(f))
     except Exception as e:
-        print(f"로그 파일 초기화 오류: {e}")
+        print(f"CSV 읽기 오류: {e}")
+        return []
 
-# 이메일 발송 시간 기록 함수
+# 이메일 발송 기록 추가
 def log_email_send(email):
     """이메일 발송 시간을 기록합니다."""
     send_time = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
@@ -48,23 +58,16 @@ def log_email_send(email):
         with open(SEND_LOG_FILE, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([email, send_time])
-            print(f"이메일 발송 기록: {email}, 발송 시간: {send_time}")
+            print(f"이메일 발송 기록 저장: {email}, 발송 시간: {send_time}")
     except Exception as e:
         print(f"이메일 발송 기록 오류: {e}")
 
-# 이메일 발송 시간 조회 함수
+# 이메일 발송 시간 조회
 def get_email_send_time(email):
     """이메일 발송 시간을 조회합니다."""
-    if not os.path.exists(SEND_LOG_FILE):
-        return "발송 기록 없음"
-    try:
-        with open(SEND_LOG_FILE, "r", encoding="utf-8") as f:
-            reader = csv.reader(f)
-            for row in reader:
-                if row[0] == email:
-                    return row[1]  # 발송 시간 반환
-    except Exception as e:
-        print(f"발송 시간 조회 오류: {e}")
+    for row in read_csv(SEND_LOG_FILE):
+        if row[0] == email:
+            return row[1]
     return "발송 기록 없음"
 
 # 서버 상태 확인 엔드포인트
@@ -82,7 +85,6 @@ def track_email():
     email = request.args.get("email")
 
     if not email:
-        print("이메일 파라미터가 없습니다.")
         return "이메일 파라미터가 없습니다.", 400
 
     # KST 타임스탬프 생성
@@ -91,70 +93,66 @@ def track_email():
     # 이메일 발송 시간 조회
     send_time = get_email_send_time(email)
 
-    # 로그 파일에 데이터 기록
+    # 열람 기록 추가
     try:
         with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([timestamp, email, send_time, client_ip, user_agent])
-            print(f"Tracking email: {email}, Send Time: {send_time}, IP: {client_ip}, User-Agent: {user_agent}, Timestamp: {timestamp}")
+            print(f"Tracking email: {email}, Send Time: {send_time}, IP: {client_ip}")
     except Exception as e:
-        print(f"로그 파일 쓰기 오류: {e}")
-        return "로그 파일 쓰기 오류", 500
+        print(f"열람 기록 저장 오류: {e}")
+        return "열람 기록 저장 오류", 500
 
     # 픽셀 이미지 반환
-    if not os.path.exists("/tmp/pixel.png"):
-        create_pixel_image()
-    return send_file("/tmp/pixel.png", mimetype="image/png")
+    return send_file(create_pixel_image(), mimetype="image/png")
 
 # 열람 기록 보기
 @app.route("/logs", methods=["GET"])
 def view_logs():
     """열람 기록 보기"""
-    if not os.path.exists(LOG_FILE):
+    logs = read_csv(LOG_FILE)
+    if not logs:
         return "로그 파일이 없습니다.", 404
     
-    # 로그 파일 읽기
     viewed_logs = []
-    with open(LOG_FILE, "r", encoding="utf-8") as f:
-        reader = csv.reader(f)
-        for row in list(reader)[1:]:  # 첫 번째 줄(헤더) 제외
-            viewed_logs.append({
-                "timestamp": f"{row[0]} (UTC+9, KST)",
-                "email": row[1],
-                "send_time": row[2],
-                "ip": row[3],
-                "user_agent": row[4]
-            })
+    for row in logs[1:]:  # 첫 번째 줄(헤더) 제외
+        viewed_logs.append({
+            "timestamp": f"{row[0]} (UTC+9, KST)",
+            "email": row[1],
+            "send_time": row[2],
+            "ip": row[3],
+            "user_agent": row[4]
+        })
 
     return render_template("logs.html", email_status=viewed_logs)
 
 # 핑 기능
 def keep_server_alive():
-    """10분마다 서버 핑을 보내는 함수"""
+    """10분마다 서버에 핑을 보내는 함수"""
+    server_url = "https://tracking-g39r.onrender.com/"
+    
     def ping():
         while True:
             try:
-                # Render에서 실행 중인 서버 URL로 핑 전송
-                server_url = os.environ.get("SERVER_URL", "http://127.0.0.1:5000/")
                 response = requests.get(server_url)
-                print(f"핑 전송 성공: {response.status_code}")
+                if response.status_code == 200:
+                    print(f"핑 전송 성공: {response.status_code}")
+                else:
+                    print(f"핑 전송 실패: {response.status_code}")
             except Exception as e:
-                print(f"핑 전송 실패: {e}")
+                print(f"핑 전송 오류: {e}")
             
             # 10분 대기
-            threading.Event().wait(600)
-    
-    # 백그라운드 스레드로 실행
-    thread = threading.Thread(target=ping, daemon=True)
-    thread.start()
+            time.sleep(600)
+
+    threading.Thread(target=ping, daemon=True).start()
 
 # 애플리케이션 초기화
 def initialize_application():
     """애플리케이션 초기화 작업"""
-    if not os.path.exists("/tmp/pixel.png"):
-        create_pixel_image()
-        print("픽셀 이미지 생성 완료")
-    initialize_log_file()
+    create_pixel_image()  # 픽셀 이미지 생성
+    initialize_csv_file(LOG_FILE, ["Timestamp (UTC+9, KST)", "Email", "Send Time", "Client IP", "User-Agent"])
+    initialize_csv_file(SEND_LOG_FILE, ["Email", "Send Time"])
 
 # 애플리케이션 실행
 if __name__ == "__main__":
