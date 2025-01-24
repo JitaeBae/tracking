@@ -90,6 +90,11 @@ def home():
     print("홈 라우트에 접근했습니다.")
     return jsonify({"status": "running", "message": "이메일 트래킹 시스템이 실행 중입니다."}), 200
 
+@app.route("/status", methods=["GET"])
+def status():
+    return jsonify({"status": "running", "message": "서버가 실행 중입니다."}), 200
+
+
 # 트래킹 엔드포인트
 @app.route("/track", methods=["GET"])
 def track_email():
