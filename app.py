@@ -1,11 +1,10 @@
-import threading
-import requests
 import os
-from flask import Flask, request, send_file, render_template, jsonify
+import csv
+import requests
+from flask import Flask, request, send_file, render_template, jsonify, redirect, url_for
 from PIL import Image
 from datetime import datetime, timedelta, timezone
-import csv
-import time
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 
@@ -41,20 +40,29 @@ def initialize_csv_file(file_path, headers):
         except Exception as e:
             print(f"CSV 초기화 오류: {e}")
 
+def reset_csv_file(file_path, headers):
+    """CSV 파일 초기화"""
+    try:
+        with open(file_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(headers)
+        print(f"CSV 파일 초기화 완료: {file_path}")
+    except Exception as e:
+        print(f"CSV 초기화 오류: {e}")
+
 def read_csv(file_path):
     """CSV 파일 로드 함수"""
     if not os.path.exists(file_path):
-        print(f"파일이 존재하지 않습니다: {file_path}")  # 디버깅 출력
+        print(f"파일이 존재하지 않습니다: {file_path}")
         return []
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             data = list(csv.reader(f))
-            print(f"읽은 데이터: {data}")  # 디버깅 출력
+            print(f"읽은 데이터: {data}")
             return data
     except Exception as e:
-        print(f"CSV 읽기 오류: {e}")  # 디버깅 출력
+        print(f"CSV 읽기 오류: {e}")
         return []
-
 
 # 이메일 발송 기록 추가
 def log_email_send(email):
@@ -121,7 +129,7 @@ def view_logs():
 
     # CSV 파일 읽기
     logs = read_csv(LOG_FILE)
-    print(f"현재 읽은 로그 데이터: {logs}")  # 디버깅 출력
+    print(f"현재 읽은 로그 데이터: {logs}")
 
     if not logs or len(logs) <= 1:  # 헤더만 있는 경우
         return render_template("logs.html", email_status=[], feedback_message="No logs available.")
@@ -137,35 +145,32 @@ def view_logs():
             "user_agent": row[4]
         })
 
-    print(f"가공된 로그 데이터: {viewed_logs}")  # 디버깅 출력
+    print(f"가공된 로그 데이터: {viewed_logs}")
 
     # 템플릿으로 데이터 전달
     return render_template("logs.html", email_status=viewed_logs, feedback_message=None)
 
-
 # 핑 기능
-def keep_server_alive(enabled=True):
-    """10분마다 서버에 핑을 보내는 함수"""
-    if not enabled:
-        return
-
+def ping_server():
+    """서버 상태를 확인하는 핑 기능"""
     server_url = os.getenv("SERVER_URL", "http://localhost:5000")
-    
-    def ping():
-        while True:
-            try:
-                response = requests.get(server_url)
-                if response.status_code == 200:
-                    print(f"핑 전송 성공: {response.status_code}")
-                else:
-                    print(f"핑 전송 실패: {response.status_code}")
-            except Exception as e:
-                print(f"핑 전송 오류: {e}")
-            
-            # 10분 대기
-            time.sleep(600)
+    try:
+        response = requests.get(server_url)
+        if response.status_code == 200:
+            print(f"핑 전송 성공: {response.status_code}")
+        else:
+            print(f"핑 전송 실패: {response.status_code}")
+    except Exception as e:
+        print(f"핑 전송 오류: {e}")
 
-    threading.Thread(target=ping, daemon=True).start()
+# APScheduler를 통한 작업 스케줄링
+def schedule_tasks():
+    """APScheduler로 주기적인 작업을 설정합니다."""
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(ping_server, 'interval', minutes=10)  # 10분마다 실행
+    scheduler.start()
+    print("APScheduler를 통해 작업이 스케줄링되었습니다.")
+    scheduler.print_jobs()
 
 # 애플리케이션 초기화
 def initialize_application():
@@ -173,9 +178,9 @@ def initialize_application():
     create_pixel_image()  # 픽셀 이미지 생성
     initialize_csv_file(LOG_FILE, ["Timestamp (UTC+9, KST)", "Email", "Send Time", "Client IP", "User-Agent"])
     initialize_csv_file(SEND_LOG_FILE, ["Email", "Send Time"])
+    schedule_tasks()  # 스케줄링 작업 추가
 
 # 애플리케이션 실행
 if __name__ == "__main__":
     initialize_application()  # 초기화 작업은 여기서만 실행
-    keep_server_alive(enabled=True)  # 핑 기능 실행
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
