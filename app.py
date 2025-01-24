@@ -84,10 +84,10 @@ def get_email_send_time(email):
             return row[1]
     return "발송 기록 없음"
 
-# 서버 상태 확인 엔드포인트
 @app.route("/", methods=["GET"])
 def home():
     """서버 상태 확인"""
+    print("홈 라우트에 접근했습니다.")
     return jsonify({"status": "running", "message": "이메일 트래킹 시스템이 실행 중입니다."}), 200
 
 # 트래킹 엔드포인트
