@@ -9,8 +9,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__)
 
 # 파일 정의 (환경 변수 또는 기본 경로)
-LOG_FILE = os.getenv("LOG_FILE_PATH", "email_tracking_log.csv")
-SEND_LOG_FILE = os.getenv("SEND_LOG_FILE_PATH", "email_send_log.csv")
+LOG_FILE = os.getenv("LOG_FILE_PATH", "/tmp/email_tracking_log.csv")
+SEND_LOG_FILE = os.getenv("SEND_LOG_FILE_PATH", "/tmp/email_send_log.csv")
 
 # KST 타임존 정의
 KST = timezone(timedelta(hours=9))
@@ -18,7 +18,7 @@ KST = timezone(timedelta(hours=9))
 # 픽셀 이미지 생성 함수
 def create_pixel_image():
     """픽셀 이미지를 생성하여 저장합니다."""
-    pixel_path = os.getenv("PIXEL_IMAGE_PATH", "pixel.png")
+    pixel_path = os.getenv("PIXEL_IMAGE_PATH", "/tmp/pixel.png")
     if not os.path.exists(pixel_path):
         try:
             pixel_image = Image.new("RGB", (1, 1), (255, 255, 255))  # 1x1 흰색 이미지 생성
@@ -33,7 +33,7 @@ def initialize_csv_file(file_path, headers):
     """CSV 파일 초기화 함수"""
     if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
         try:
-            with open(file_path, "w", newline="", encoding="utf-8") as f:
+            with open(file_path, "w", newline="", encoding="euc-kr") as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
             print(f"CSV 파일 초기화 완료: {file_path}")
@@ -43,7 +43,7 @@ def initialize_csv_file(file_path, headers):
 def reset_csv_file(file_path, headers):
     """CSV 파일 초기화"""
     try:
-        with open(file_path, "w", newline="", encoding="utf-8") as f:
+        with open(file_path, "w", newline="", encoding="euc-kr") as f:
             writer = csv.writer(f)
             writer.writerow(headers)
         print(f"CSV 파일 초기화 완료: {file_path}")
@@ -56,7 +56,7 @@ def read_csv(file_path):
         print(f"파일이 존재하지 않습니다: {file_path}")
         return []
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, "r", encoding="euc-kr") as f:
             data = list(csv.reader(f))
             print(f"읽은 데이터: {data}")
             return data
@@ -69,7 +69,7 @@ def log_email_send(email):
     """이메일 발송 시간을 기록합니다."""
     send_time = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     try:
-        with open(SEND_LOG_FILE, "a", newline="", encoding="utf-8") as f:
+        with open(SEND_LOG_FILE, "a", newline="", encoding="euc-kr") as f:
             writer = csv.writer(f)
             writer.writerow([email, send_time])
             print(f"이메일 발송 기록 저장: {email}, 발송 시간: {send_time}")
@@ -90,11 +90,6 @@ def home():
     print("홈 라우트에 접근했습니다.")
     return jsonify({"status": "running", "message": "이메일 트래킹 시스템이 실행 중입니다."}), 200
 
-@app.route("/status", methods=["GET"])
-def status():
-    return jsonify({"status": "running", "message": "서버가 실행 중입니다."}), 200
-
-
 # 트래킹 엔드포인트
 @app.route("/track", methods=["GET"])
 def track_email():
@@ -114,7 +109,7 @@ def track_email():
 
     # 열람 기록 추가
     try:
-        with open(LOG_FILE, "a", newline="", encoding="utf-8") as f:
+        with open(LOG_FILE, "a", newline="", encoding="euc-kr") as f:
             writer = csv.writer(f)
             writer.writerow([timestamp, email, send_time, client_ip, user_agent])
             print(f"Tracking email: {email}, Send Time: {send_time}, IP: {client_ip}")
@@ -124,15 +119,6 @@ def track_email():
 
     # 픽셀 이미지 반환
     return send_file(create_pixel_image(), mimetype="image/png")
-
-@app.route("/download_log", methods=["GET"])
-def download_log():
-    """트래킹 로그 파일 다운로드"""
-    if os.path.exists(LOG_FILE):
-        return send_file(LOG_FILE, as_attachment=True)
-    else:
-        return "Log file not found.", 404
-
 
 @app.route("/logs", methods=["GET", "POST"])
 def view_logs():
@@ -164,11 +150,25 @@ def view_logs():
     # 템플릿으로 데이터 전달
     return render_template("logs.html", email_status=viewed_logs, feedback_message=None)
 
+@app.route("/download_log", methods=["GET"])
+def download_log():
+    """트래킹 로그 파일 다운로드"""
+    if os.path.exists(LOG_FILE):
+        return send_file(
+            LOG_FILE,
+            as_attachment=True,
+            mimetype="text/csv",
+            attachment_filename="email_tracking_log.csv"
+        )
+    else:
+        return "Log file not found.", 404
+
 # 핑 기능
 def ping_server():
     """서버 상태를 확인하는 핑 기능"""
     server_url = os.getenv("SERVER_URL", "https://tracking-g39r.onrender.com")
     try:
+        print(f"핑 전송 시도 중: {server_url}")
         response = requests.get(server_url)
         if response.status_code == 200:
             print(f"핑 전송 성공: {response.status_code}")
