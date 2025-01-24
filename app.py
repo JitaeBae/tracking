@@ -41,17 +41,20 @@ def initialize_csv_file(file_path, headers):
         except Exception as e:
             print(f"CSV 초기화 오류: {e}")
 
-# CSV 파일 로드
 def read_csv(file_path):
     """CSV 파일 로드 함수"""
     if not os.path.exists(file_path):
+        print(f"파일이 존재하지 않습니다: {file_path}")  # 디버깅 출력
         return []
     try:
         with open(file_path, "r", encoding="utf-8") as f:
-            return list(csv.reader(f))
+            data = list(csv.reader(f))
+            print(f"읽은 데이터: {data}")  # 디버깅 출력
+            return data
     except Exception as e:
-        print(f"CSV 읽기 오류: {e}")
+        print(f"CSV 읽기 오류: {e}")  # 디버깅 출력
         return []
+
 
 # 이메일 발송 기록 추가
 def log_email_send(email):
