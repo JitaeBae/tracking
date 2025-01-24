@@ -120,6 +120,15 @@ def track_email():
     # 픽셀 이미지 반환
     return send_file(create_pixel_image(), mimetype="image/png")
 
+@app.route("/download_log", methods=["GET"])
+def download_log():
+    """트래킹 로그 파일 다운로드"""
+    if os.path.exists(LOG_FILE):
+        return send_file(LOG_FILE, as_attachment=True)
+    else:
+        return "Log file not found.", 404
+
+
 @app.route("/logs", methods=["GET", "POST"])
 def view_logs():
     """열람 기록 보기 및 초기화 버튼"""
