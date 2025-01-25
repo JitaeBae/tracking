@@ -9,11 +9,21 @@ from apscheduler.schedulers.background import BackgroundScheduler
 app = Flask(__name__)
 
 # 파일 정의 (환경 변수 또는 기본 경로)
-LOG_FILE = os.getenv("LOG_FILE_PATH", "/tmp/email_tracking_log.csv")
-SEND_LOG_FILE = os.getenv("SEND_LOG_FILE_PATH", "/tmp/email_send_log.csv")
+LOG_FILE = os.getenv("LOG_FILE_PATH", "email_tracking_log.csv")
+SEND_LOG_FILE = os.getenv("SEND_LOG_FILE_PATH", "email_send_log.csv")
 
 # KST 타임존 정의
 KST = timezone(timedelta(hours=9))
+
+# 디렉토리 생성 함수
+def create_directory_if_not_exists(directory):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        print(f"디렉토리 생성: {directory}")
+
+# 애플리케이션 초기화 시 호출
+create_directory_if_not_exists("./logs")
+
 
 # 픽셀 이미지 생성 함수
 def create_pixel_image():
@@ -189,12 +199,14 @@ def schedule_tasks():
 # 애플리케이션 초기화
 def initialize_application():
     """애플리케이션 초기화 작업"""
+    create_directory_if_not_exists("./logs")  # 로그 디렉토리 생성
     create_pixel_image()  # 픽셀 이미지 생성
     initialize_csv_file(LOG_FILE, ["Timestamp (UTC+9, KST)", "Email", "Send Time", "Client IP", "User-Agent"])
     initialize_csv_file(SEND_LOG_FILE, ["Email", "Send Time"])
     schedule_tasks()  # 스케줄링 작업 추가
 
+
 # 애플리케이션 실행
-if __name__ == "__main__":
-    initialize_application()  # 초기화 작업은 여기서만 실행
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+#if __name__ == "__main__":
+#    initialize_application()  # 초기화 작업은 여기서만 실행
+ #   app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
