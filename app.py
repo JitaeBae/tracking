@@ -262,10 +262,11 @@ def initialize_application():
 
     # 스케줄링
     schedule_tasks()
-
+    
+initialize_application()
 # -------------------
 # 9. 앱 실행 (로컬)
 # -------------------
-#if __name__ == "__main__":
-#    initialize_application()
-#    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+if __name__ == "__main__":
+#    
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
