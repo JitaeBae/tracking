@@ -66,33 +66,44 @@ class EmailSendLog(Base):
     client_ip = Column(String, nullable=False)
     user_agent = Column(String, nullable=False)
 
-    @validates("send_time")
-    def validate_send_time(self, key, send_time):
-        logger = logging.getLogger(__name__)
-        # send_time이 문자열인 경우 datetime 객체로 변환
-        if isinstance(send_time, str):
-            try:
-                send_time = datetime.strptime(send_time, "%Y-%m-%d %H:%M:%S")
-                send_time = send_time.replace(tzinfo=KST)
-                send_time = send_time.astimezone(timezone.utc)
-                logger.debug(f"Converted send_time to UTC: {send_time}")
-            except ValueError:
-                logger.error("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
-                raise ValueError("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
-        elif send_time.tzinfo is None:
-            # 시간대 정보가 없는 경우 KST 시간대 적용 후 UTC로 변환
+@validates("send_time")
+def validate_send_time(self, key, send_time):
+    logger = logging.getLogger(__name__)
+
+    # 문자열인 경우 처리
+    if isinstance(send_time, str):
+        try:
+            # 문자열을 datetime으로 변환
+            send_time = datetime.strptime(send_time, "%Y-%m-%d %H:%M:%S")
+            send_time = send_time.replace(tzinfo=KST)  # KST로 설정
+            send_time = send_time.astimezone(timezone.utc)  # UTC로 변환
+            logger.debug(f"Converted send_time to UTC: {send_time}")
+        except ValueError:
+            logger.error("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
+            raise ValueError("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
+
+    # datetime 객체인 경우 처리
+    elif isinstance(send_time, datetime):
+        if send_time.tzinfo is None:  # 시간대 정보가 없으면 KST로 설정
             send_time = send_time.replace(tzinfo=KST)
             send_time = send_time.astimezone(timezone.utc)
             logger.debug(f"Applied KST timezone and converted to UTC: {send_time}")
 
-        # 현재 UTC 시간과 비교
-        current_time = datetime.now(timezone.utc)
-        logger.debug(f"Current time (UTC): {current_time}, send_time: {send_time}")
+    # 다른 데이터 타입인 경우 예외 처리
+    else:
+        logger.error(f"Invalid type for send_time: {type(send_time)}")
+        raise TypeError("send_time must be a string in 'YYYY-MM-DD HH:MM:SS' format or a datetime object.")
 
-        if send_time > current_time:
-            logger.error("send_time cannot be in the future.")
-            raise ValueError("send_time cannot be in the future.")
-        return send_time
+    # 현재 UTC 시간과 비교
+    current_time = datetime.now(timezone.utc)
+    logger.debug(f"Current time (UTC): {current_time}, send_time: {send_time}")
+
+    if send_time > current_time:
+        logger.error("send_time cannot be in the future.")
+        raise ValueError("send_time cannot be in the future.")
+
+    return send_time
+
 
 # ---------------------
 # 4. DB 초기화 함수
@@ -214,9 +225,12 @@ def view_logs():
             viewed_logs = []
             for row in logs:
                 viewed_logs.append({
-                    "timestamp": row.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                    "timestamp": row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),  # UTC -> KST 변환
                     "email": row.email,
-                    "send_time": row.send_time,
+                    "send_time": (
+                        datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                        if row.send_time else "N/A"
+                    ),
                     "ip": row.client_ip,
                     "user_agent": row.user_agent
                 })
@@ -226,6 +240,7 @@ def view_logs():
         except Exception as e:
             app.logger.error(f"로그 조회 오류: {e}")
             return render_template("logs.html", email_status=[], feedback_message="An error occurred while fetching logs."), 500
+
 
 @app.route("/download_log", methods=["GET"])
 def download_log():
@@ -245,14 +260,15 @@ def download_log():
             writer = csv.writer(output, lineterminator='\n')
 
             # 헤더
-            writer.writerow(["Timestamp (UTC)", "Email", "Send Time", "Client IP", "User-Agent"])
+            writer.writerow(["Timestamp (KST)", "Email", "Send Time (KST)", "Client IP", "User-Agent"])
 
             # 데이터
             for row in logs:
                 writer.writerow([
-                    row.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                    row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),
                     row.email,
-                    row.send_time,
+                    (datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                     if row.send_time else "N/A"),
                     row.client_ip,
                     row.user_agent
                 ])
@@ -268,6 +284,7 @@ def download_log():
         except Exception as e:
             app.logger.error(f"CSV 다운로드 오류: {e}")
             return "CSV 다운로드 오류", 500
+
 
 @app.route("/log-email", methods=["POST"])
 def log_email():
