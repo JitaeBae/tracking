@@ -282,7 +282,7 @@ def log_email():
         # 클라이언트에서 JSON 데이터를 받음
         data = request.json
         email = data.get("email")
-        send_time = data.get("send_time")
+        send_time_str = data.get("send_time")
         if not email or not send_time:
             return jsonify({"error": "email과 send_time이 필요합니다."}), 400
     
