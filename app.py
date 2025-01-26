@@ -182,7 +182,7 @@ def view_logs():
             # 전체 로그 삭제
             db.query(EmailLog).delete()
             db.commit()
-            print("로그 데이터 초기화 완료.")
+            app.logger.info("로그 데이터 초기화 완료.")
             return redirect(url_for("view_logs"))
 
         # GET: 로그 조회
@@ -202,7 +202,7 @@ def view_logs():
 
         return render_template("logs.html", email_status=viewed_logs, feedback_message=None)
 
-except Exception as e:
+    except Exception as e:
         app.logger.error(f"로그 조회 오류: {e}")
         return render_template("logs.html", email_status=[], feedback_message="An error occurred while fetching logs."), 500
 
