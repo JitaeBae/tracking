@@ -4,10 +4,15 @@ from flask import Flask, request, send_file, render_template, jsonify, redirect,
 from PIL import Image
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
+from flask import jsonify
 
 # ========= SQLAlchemy & DB 연결 설정 =========
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
+import logging
+
+logging.basicConfig()
+logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
 
 # Flask 앱 생성
 app = Flask(__name__)
@@ -26,7 +31,13 @@ SEND_LOG_FILE = os.getenv("SEND_LOG_FILE_PATH", "email_send_log.csv")
 # -----------------------
 # 2. SQLAlchemy 초기 설정
 # -----------------------
-engine = create_engine(DATABASE_URL, echo=False)  # echo=True로 하면 SQL 로그가 콘솔에 출력
+engine = create_engine(DATABASE_URL, echo=True, connect_args={
+        "sslmode": "require",
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5
+    })  # echo=True로 하면 SQL 로그가 콘솔에 출력
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -107,6 +118,14 @@ def home():
     print("홈 라우트에 접근했습니다.")
     return jsonify({"status": "running", "message": "이메일 트래킹 시스템이 실행 중입니다."}), 200
 
+@app.route('/favicon.ico')
+def favicon():
+    return send_from_directory(
+        os.path.join(app.root_path, 'static'),
+        'favicon.ico',
+        mimetype='image/vnd.microsoft.icon'
+    )
+
 @app.route("/track", methods=["GET"])
 def track_email():
     """이메일 열람 트래킹 (DB에 저장)"""
@@ -175,9 +194,10 @@ def view_logs():
 
         return render_template("logs.html", email_status=viewed_logs, feedback_message=None)
 
-    except Exception as e:
-        print(f"로그 조회 오류: {e}")
-        return "로그 조회 오류", 500
+except Exception as e:
+        app.logger.error(f"로그 조회 오류: {e}")
+        return render_template("logs.html", email_status=[], feedback_message="An error occurred while fetching logs."), 500
+
     finally:
         db.close()
 
@@ -224,6 +244,12 @@ def download_log():
         return "CSV 다운로드 오류", 500
     finally:
         db.close()
+
+@app.errorhandler(500)
+def internal_server_error(e):
+    app.logger.error(f"Server error: {e}")
+    return jsonify({"error": "An internal server error occurred"}), 500
+
 
 # ---------------
 # 7. 핑 & 스케줄
