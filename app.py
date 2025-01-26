@@ -20,14 +20,13 @@ logging.getLogger(__name__).setLevel(logging.DEBUG)
 # Flask 앱 생성
 app = Flask(__name__)
 
-# UTC-9 시간대 정의 (사용하지 않음, 대신 UTC 사용)
-# UTC_MINUS_9 = ZoneInfo('Etc/GMT+9')
+# 한국 표준시(KST) 정의
+KST = ZoneInfo('Asia/Seoul')
 
 # ------------------------
 # 1. 환경 변수/타임존/기타
 # ------------------------
 DATABASE_URL = os.getenv("DATABASE_URL")  # 예: "postgresql://user:pass@host:port/db"
-# KST = timezone(timedelta(hours=9))  # 사용하지 않음
 
 # (과거 CSV 파일 이름이었지만, DB 사용으로 대체)
 LOG_FILE = os.getenv("LOG_FILE_PATH", "email_tracking_log.csv")
@@ -73,18 +72,18 @@ class EmailSendLog(Base):
         # send_time이 문자열인 경우 datetime 객체로 변환
         if isinstance(send_time, str):
             try:
-                send_time = datetime.fromisoformat(send_time)
-                if send_time.tzinfo is None:
-                    # 시간대 정보가 없는 경우 UTC로 설정
-                    send_time = send_time.replace(tzinfo=timezone.utc)
-                logger.debug(f"Converted send_time: {send_time}")
+                send_time = datetime.strptime(send_time, "%Y-%m-%d %H:%M:%S")
+                send_time = send_time.replace(tzinfo=KST)
+                send_time = send_time.astimezone(timezone.utc)
+                logger.debug(f"Converted send_time to UTC: {send_time}")
             except ValueError:
-                logger.error("send_time must be in ISO 8601 format.")
-                raise ValueError("send_time must be in ISO 8601 format.")
+                logger.error("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
+                raise ValueError("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
         elif send_time.tzinfo is None:
-            # 시간대 정보가 없는 경우 UTC로 설정
-            send_time = send_time.replace(tzinfo=timezone.utc)
-            logger.debug(f"Applied UTC timezone to send_time: {send_time}")
+            # 시간대 정보가 없는 경우 KST 시간대 적용 후 UTC로 변환
+            send_time = send_time.replace(tzinfo=KST)
+            send_time = send_time.astimezone(timezone.utc)
+            logger.debug(f"Applied KST timezone and converted to UTC: {send_time}")
 
         # 현재 UTC 시간과 비교
         current_time = datetime.now(timezone.utc)
