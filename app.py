@@ -245,6 +245,31 @@ def download_log():
     finally:
         db.close()
 
+@app.route("/log-email", methods=["POST"])
+def log_email():
+    """이메일 발송 기록 저장"""
+    db = SessionLocal()
+    try:
+        # 클라이언트에서 JSON 데이터를 받음
+        data = request.json
+        email = data.get("email")
+        send_time = data.get("send_time")
+        if not email or not send_time:
+            return jsonify({"error": "email과 send_time이 필요합니다."}), 400
+
+        # 발송 기록 저장
+        new_record = EmailSendLog(email=email, send_time=send_time)
+        db.add(new_record)
+        db.commit()
+        return jsonify({"message": "이메일 발송 기록이 저장되었습니다."}), 200
+    except Exception as e:
+        db.rollback()
+        app.logger.error(f"이메일 발송 기록 저장 오류: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
 @app.errorhandler(500)
 def internal_server_error(e):
     app.logger.error(f"Server error: {e}")
