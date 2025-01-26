@@ -224,13 +224,21 @@ def view_logs():
 
             viewed_logs = []
             for row in logs:
+                # send_time을 ISO 형식으로 변환 가능 여부 확인
+                try:
+                    send_time_kst = (
+                        datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                        if row.send_time and row.send_time != "발송 기록 없음"
+                        else "발송 기록 없음"
+                    )
+                except Exception as e:
+                    app.logger.warning(f"Invalid send_time format for email '{row.email}': {row.send_time}. Error: {e}")
+                    send_time_kst = "발송 기록 없음"
+
                 viewed_logs.append({
                     "timestamp": row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),  # UTC -> KST 변환
                     "email": row.email,
-                    "send_time": (
-                        datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
-                        if row.send_time else "N/A"
-                    ),
+                    "send_time": send_time_kst,
                     "ip": row.client_ip,
                     "user_agent": row.user_agent
                 })
@@ -240,6 +248,7 @@ def view_logs():
         except Exception as e:
             app.logger.error(f"로그 조회 오류: {e}")
             return render_template("logs.html", email_status=[], feedback_message="An error occurred while fetching logs."), 500
+
 
 
 @app.route("/download_log", methods=["GET"])
