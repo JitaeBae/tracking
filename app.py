@@ -59,6 +59,13 @@ class EmailSendLog(Base):
     email = Column(String, nullable=False)
     send_time = Column(String)
 
+    @validates("send_time")
+    def validate_send_time(self, key, value):
+        """저장 전에 UTC+9로 변환"""
+        utc_time = datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        kst_time = utc_time.astimezone(KST)
+        return kst_time.strftime("%Y-%m-%d %H:%M:%S")
+
 # ---------------------
 # 4. DB 초기화 함수
 # ---------------------
@@ -136,8 +143,9 @@ def track_email():
     if not email:
         return "이메일 파라미터가 없습니다.", 400
 
-    # KST 타임스탬프
-    timestamp = datetime.now(KST)
+    # KST 타임스탬프 (UTC+9 변환)
+    timestamp = datetime.now(timezone.utc).astimezone(KST)
+        
     # 이메일 발송 시간 조회
     send_time = get_email_send_time(email)
 
