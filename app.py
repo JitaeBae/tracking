@@ -5,6 +5,7 @@ from PIL import Image
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
 from flask import jsonify
+from zoneinfo import ZoneInfo  
 
 # ========= SQLAlchemy & DB 연결 설정 =========
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
@@ -12,12 +13,15 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy.orm import validates 
 import logging
 
+
+
 logging.basicConfig()
 logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
 
 # Flask 앱 생성
 app = Flask(__name__)
 
+UTC_MINUS_9 = ZoneInfo('Etc/GMT+9')
 # ------------------------
 # 1. 환경 변수/타임존/기타
 # ------------------------
@@ -59,15 +63,29 @@ class EmailSendLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String, nullable=False)
-    send_time = Column(DateTime, nullable=False, default=datetime.utcnow)
+    send_time = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC_MINUS_9))
     client_ip = Column(String, nullable=False)
     user_agent = Column(String, nullable=False)
 
     @validates("send_time")
     def validate_send_time(self, key, send_time):
-        if send_time > datetime.utcnow():
+        # send_time이 문자열인 경우 datetime 객체로 변환
+        if isinstance(send_time, str):
+            try:
+                send_time = datetime.strptime(send_time, "%Y-%m-%d %H:%M:%S")
+                send_time = send_time.replace(tzinfo=UTC_MINUS_9)
+            except ValueError:
+                raise ValueError("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
+        elif send_time.tzinfo is None:
+            # 시간대 정보가 없는 경우 UTC-9 시간대 적용
+            send_time = send_time.replace(tzinfo=UTC_MINUS_9)
+
+        # 현재 UTC-9 시간과 비교
+        current_time = datetime.now(UTC_MINUS_9)
+        if send_time > current_time:
             raise ValueError("send_time cannot be in the future.")
         return send_time
+
 
 # ---------------------
 # 4. DB 초기화 함수
@@ -267,6 +285,13 @@ def log_email():
         send_time = data.get("send_time")
         if not email or not send_time:
             return jsonify({"error": "email과 send_time이 필요합니다."}), 400
+    
+        # send_time을 datetime 객체로 변환 및 UTC-9 시간대 적용
+        try:
+            send_time = datetime.strptime(send_time_str, "%Y-%m-%d %H:%M:%S")
+            send_time = send_time.replace(tzinfo=UTC_MINUS_9)
+        except ValueError:
+            return jsonify({"error": "send_time은 'YYYY-MM-DD HH:MM:SS' 형식이어야 합니다."}), 400
 
         # 발송 기록 저장
         new_record = EmailSendLog(email=email, send_time=send_time)
