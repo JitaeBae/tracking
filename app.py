@@ -13,21 +13,21 @@ from sqlalchemy.orm import validates
 import logging
 
 # 로깅 설정
-logging.basicConfig()
+logging.basicConfig(level=logging.DEBUG)
 logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
-logging.getLogger('flask.app').setLevel(logging.DEBUG)  # Flask 로깅 레벨 설정
+logging.getLogger(__name__).setLevel(logging.DEBUG)
 
 # Flask 앱 생성
 app = Flask(__name__)
 
-# UTC-9 시간대 정의
-UTC_MINUS_9 = ZoneInfo('Etc/GMT+9')
+# UTC-9 시간대 정의 (사용하지 않음, 대신 UTC 사용)
+# UTC_MINUS_9 = ZoneInfo('Etc/GMT+9')
 
 # ------------------------
 # 1. 환경 변수/타임존/기타
 # ------------------------
 DATABASE_URL = os.getenv("DATABASE_URL")  # 예: "postgresql://user:pass@host:port/db"
-KST = timezone(timedelta(hours=9))
+# KST = timezone(timedelta(hours=9))  # 사용하지 않음
 
 # (과거 CSV 파일 이름이었지만, DB 사용으로 대체)
 LOG_FILE = os.getenv("LOG_FILE_PATH", "email_tracking_log.csv")
@@ -63,26 +63,35 @@ class EmailSendLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String, nullable=False)
-    send_time = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC_MINUS_9))
+    send_time = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     client_ip = Column(String, nullable=False)
     user_agent = Column(String, nullable=False)
 
     @validates("send_time")
     def validate_send_time(self, key, send_time):
+        logger = logging.getLogger(__name__)
         # send_time이 문자열인 경우 datetime 객체로 변환
         if isinstance(send_time, str):
             try:
-                send_time = datetime.strptime(send_time, "%Y-%m-%d %H:%M:%S")
-                send_time = send_time.replace(tzinfo=UTC_MINUS_9)
+                send_time = datetime.fromisoformat(send_time)
+                if send_time.tzinfo is None:
+                    # 시간대 정보가 없는 경우 UTC로 설정
+                    send_time = send_time.replace(tzinfo=timezone.utc)
+                logger.debug(f"Converted send_time: {send_time}")
             except ValueError:
-                raise ValueError("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
+                logger.error("send_time must be in ISO 8601 format.")
+                raise ValueError("send_time must be in ISO 8601 format.")
         elif send_time.tzinfo is None:
-            # 시간대 정보가 없는 경우 UTC-9 시간대 적용
-            send_time = send_time.replace(tzinfo=UTC_MINUS_9)
+            # 시간대 정보가 없는 경우 UTC로 설정
+            send_time = send_time.replace(tzinfo=timezone.utc)
+            logger.debug(f"Applied UTC timezone to send_time: {send_time}")
 
-        # 현재 UTC-9 시간과 비교
-        current_time = datetime.now(UTC_MINUS_9)
+        # 현재 UTC 시간과 비교
+        current_time = datetime.now(timezone.utc)
+        logger.debug(f"Current time (UTC): {current_time}, send_time: {send_time}")
+
         if send_time > current_time:
+            logger.error("send_time cannot be in the future.")
             raise ValueError("send_time cannot be in the future.")
         return send_time
 
@@ -113,7 +122,7 @@ def get_email_send_time(email):
     with SessionLocal() as db:
         record = db.query(EmailSendLog).filter(EmailSendLog.email == email).first()
         if record:
-            return record.send_time
+            return record.send_time.isoformat()
         else:
             return "발송 기록 없음"
 
@@ -121,7 +130,7 @@ def log_email_send(email):
     """이메일 발송 기록 저장 (과거 CSV -> DB)"""
     with SessionLocal() as db:
         try:
-            send_time = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+            send_time = datetime.now(timezone.utc).isoformat()
             new_record = EmailSendLog(email=email, send_time=send_time)
             db.add(new_record)
             db.commit()
@@ -159,8 +168,8 @@ def track_email():
         app.logger.warning("이메일 파라미터가 없습니다.")
         return "이메일 파라미터가 없습니다.", 400
 
-    # KST 타임스탬프 (UTC+9 변환)
-    timestamp = datetime.now(timezone.utc).astimezone(KST)
+    # UTC 타임스탬프
+    timestamp = datetime.now(timezone.utc)
         
     # 이메일 발송 시간 조회
     send_time = get_email_send_time(email)
@@ -237,7 +246,7 @@ def download_log():
             writer = csv.writer(output, lineterminator='\n')
 
             # 헤더
-            writer.writerow(["Timestamp (UTC+9, KST)", "Email", "Send Time", "Client IP", "User-Agent"])
+            writer.writerow(["Timestamp (UTC)", "Email", "Send Time", "Client IP", "User-Agent"])
 
             # 데이터
             for row in logs:
@@ -275,19 +284,10 @@ def log_email():
         app.logger.warning("Missing email or send_time_str")
         return jsonify({"error": "email과 send_time이 필요합니다."}), 400
 
-    # send_time을 datetime 객체로 변환 및 UTC-9 시간대 적용
-    try:
-        send_time = datetime.strptime(send_time_str, "%Y-%m-%d %H:%M:%S")
-        send_time = send_time.replace(tzinfo=UTC_MINUS_9)
-        app.logger.debug(f"Parsed send_time: {send_time}")
-    except ValueError as ve:
-        app.logger.warning(f"send_time format error: {ve}")
-        return jsonify({"error": "send_time은 'YYYY-MM-DD HH:MM:SS' 형식이어야 합니다."}), 400
-
     # 발송 기록 저장
     with SessionLocal() as db:
         try:
-            new_record = EmailSendLog(email=email, send_time=send_time)
+            new_record = EmailSendLog(email=email, send_time=send_time_str)
             db.add(new_record)
             db.commit()
             app.logger.info("이메일 발송 기록 저장 완료.")
@@ -302,9 +302,9 @@ def internal_server_error(e):
     app.logger.error(f"Server error: {e}")
     return jsonify({"error": "An internal server error occurred"}), 500
 
-# ---------------
+# ---------------------
 # 7. 핑 & 스케줄
-# ---------------
+# ---------------------
 def ping_server():
     """서버 상태를 확인하는 핑 기능"""
     server_url = os.getenv("SERVER_URL", "https://tracking-g39r.onrender.com")
