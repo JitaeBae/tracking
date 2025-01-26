@@ -9,6 +9,7 @@ from flask import jsonify
 # ========= SQLAlchemy & DB 연결 설정 =========
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import validates 
 import logging
 
 logging.basicConfig()
@@ -54,17 +55,19 @@ class EmailLog(Base):
     user_agent = Column(String)
 
 class EmailSendLog(Base):
-    __tablename__ = "email_send_logs"
+    __tablename__ = 'email_send_logs'
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String, nullable=False)
-    send_time = Column(String)
+    send_time = Column(DateTime, nullable=False, default=datetime.utcnow)
+    client_ip = Column(String, nullable=False)
+    user_agent = Column(String, nullable=False)
 
     @validates("send_time")
-    def validate_send_time(self, key, value):
-        """저장 전에 UTC+9로 변환"""
-        utc_time = datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        kst_time = utc_time.astimezone(KST)
-        return kst_time.strftime("%Y-%m-%d %H:%M:%S")
+    def validate_send_time(self, key, send_time):
+        if send_time > datetime.utcnow():
+            raise ValueError("send_time cannot be in the future.")
+        return send_time
 
 # ---------------------
 # 4. DB 초기화 함수
