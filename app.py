@@ -36,15 +36,37 @@ SEND_LOG_FILE = os.getenv("SEND_LOG_FILE_PATH", "email_send_log.csv")
 # -----------------------
 # 2. SQLAlchemy 초기 설정
 # -----------------------
-engine = create_engine(DATABASE_URL, echo=True, connect_args={
-        "sslmode": "require",
+
+from sqlalchemy.pool import NullPool
+
+# SQLAlchemy 엔진 생성
+engine = create_engine(
+    DATABASE_URL,
+    echo=os.getenv("SQLALCHEMY_ECHO", "False").lower() == "true",  # 환경 변수로 echo 제어
+    pool_size=int(os.getenv("SQLALCHEMY_POOL_SIZE", 10)),          # 기본 풀 크기를 10으로 설정
+    max_overflow=int(os.getenv("SQLALCHEMY_MAX_OVERFLOW", 5)),     # 기본 초과 연결 개수
+    pool_recycle=int(os.getenv("SQLALCHEMY_POOL_RECYCLE", 1800)),  # 기본 재활용 시간(초)
+    pool_pre_ping=True,                                           # 연결 유효성 검사
+    poolclass=NullPool if os.getenv("SQLALCHEMY_USE_POOL", "True").lower() == "false" else None,  # 연결 풀 비활성화 옵션
+    connect_args={
+        "sslmode": os.getenv("SQLALCHEMY_SSLMODE", "require"),    # SSL 모드 설정
         "keepalives": 1,
-        "keepalives_idle": 30,
-        "keepalives_interval": 10,
-        "keepalives_count": 5
-    })  # echo=True로 하면 SQL 로그가 콘솔에 출력
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        "keepalives_idle": int(os.getenv("SQLALCHEMY_KEEPALIVES_IDLE", 30)),
+        "keepalives_interval": int(os.getenv("SQLALCHEMY_KEEPALIVES_INTERVAL", 10)),
+        "keepalives_count": int(os.getenv("SQLALCHEMY_KEEPALIVES_COUNT", 5)),
+    },
+)
+
+# 세션 생성
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
+
+# 베이스 클래스 정의
 Base = declarative_base()
+
 
 # -----------------------------
 # 3. DB 테이블(ORM 모델) 정의
