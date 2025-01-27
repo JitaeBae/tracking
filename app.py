@@ -4,7 +4,8 @@ from flask import Flask, request, send_file, render_template, jsonify, redirect,
 from PIL import Image
 from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
-from zoneinfo import ZoneInfo  
+from zoneinfo import ZoneInfo
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ========= SQLAlchemy & DB 연결 설정 =========
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
@@ -321,6 +322,66 @@ def log_email():
             db.rollback()
             app.logger.error(f"이메일 발송 기록 저장 오류: {e}")
             return jsonify({"error": str(e)}), 500
+
+
+
+@app.route("/process-requests", methods=["POST"])
+def process_requests():
+    """
+    1,000개의 요청을 10개씩 분할하여 처리
+    요청 데이터는 JSON 배열 형식으로 전달됩니다.
+    """
+    data = request.json
+    if not isinstance(data, list) or len(data) != 1000:
+        return jsonify({"error": "1,000개의 요청 데이터를 JSON 배열로 전달해야 합니다."}), 400
+
+    # 최대 동시 처리 개수 및 배치 크기
+    max_workers = 10
+    batch_size = 10
+
+    # 요청 데이터 분할
+    batches = [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+
+    def handle_request(request_data):
+        """단일 요청 처리"""
+        try:
+            email = request_data.get("email")
+            send_time_str = request_data.get("send_time")
+            if not email or not send_time_str:
+                raise ValueError("email과 send_time 필드는 필수입니다.")
+
+            # 발송 기록 저장
+            log_to_db(
+                EmailSendLog,
+                email=email,
+                send_time=send_time_str,
+                client_ip="127.0.0.1",  # 예시 IP (수정 가능)
+                user_agent="BatchProcessor/1.0",  # 예시 User-Agent
+            )
+            return {"status": "success", "email": email}
+        except Exception as e:
+            return {"status": "error", "email": request_data.get("email", "unknown"), "error": str(e)}
+
+    results = []
+
+    # ThreadPoolExecutor를 사용하여 병렬 처리
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for batch in batches:
+            futures = [executor.submit(handle_request, request) for request in batch]
+
+            # 현재 배치의 결과를 기다림
+            for future in as_completed(futures):
+                results.append(future.result())
+
+    # 처리 결과 반환
+    success_count = sum(1 for result in results if result["status"] == "success")
+    error_count = len(results) - success_count
+
+    return jsonify({
+        "message": f"{success_count}개의 요청이 성공적으로 처리되었습니다.",
+        "errors": [result for result in results if result["status"] == "error"]
+    }), 200
+
 
 @app.errorhandler(500)
 def internal_server_error(e):
