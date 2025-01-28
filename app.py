@@ -78,8 +78,8 @@ def track_email():
     if not email:
         return "이메일 파라미터가 없습니다.", 400
 
-    timestamp = datetime.now(timezone.utc)  # UTC 타임스탬프
     send_time = get_email_send_time(email)
+    timestamp = datetime.now(timezone.utc)  # UTC 타임스탬프
 
     with SessionLocal() as db:
         # 중복 기록 방지
