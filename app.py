@@ -159,6 +159,7 @@ def create_pixel_image():
 def get_email_send_time(email):
     """DB에서 email에 해당하는 발송 시간을 찾거나, 없으면 '발송 기록 없음'"""
     with SessionLocal() as db:
+        db.expire_all()
         record = db.query(EmailSendLog).filter(EmailSendLog.email == email).first()
         if record:
             return record.send_time
@@ -215,6 +216,7 @@ def track_email():
 
     # DB에 기록
     with SessionLocal() as db:
+        db.expire_all()
         try:
             new_log = EmailLog(
                 timestamp=timestamp,
@@ -238,6 +240,7 @@ def track_email():
 def view_logs():
     """열람 기록 보기 (GET) / 초기화 (POST)"""
     with SessionLocal() as db:
+        db.expire_all()
         try:
             if request.method == "POST":
                 # 전체 로그 삭제
@@ -293,6 +296,7 @@ def download_log():
     import io
 
     with SessionLocal() as db:
+        db.expire_all()
         try:
             logs = db.query(EmailLog).all()
             if not logs:
