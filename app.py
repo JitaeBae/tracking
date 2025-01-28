@@ -278,10 +278,10 @@ def view_logs():
                     if row.send_time and row.send_time != "발송 기록 없음":
                         if isinstance(row.send_time, datetime):
                             # 이미 datetime 객체인 경우
-                            send_time_kst = row.send_time.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                            send_time_kst = row.send_time.strftime("%Y-%m-%d %H:%M:%S")
                         else:
                             # 문자열인 경우 datetime 객체로 변환
-                            send_time_kst = datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                            send_time_kst = datetime.fromisoformat(row.send_time).strftime("%Y-%m-%d %H:%M:%S")
                     else:
                         send_time_kst = "발송 기록 없음"
                 except Exception as e:
