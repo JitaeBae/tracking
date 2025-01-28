@@ -131,16 +131,25 @@ def view_logs():
             if not logs:
                 return render_template("logs.html", email_status=[], feedback_message="No logs available.")
 
-            viewed_logs = []
+            viewed_logs = [] 
+            
+            # logs 조회 시 datetime 변환 추가
             for row in logs:
+                send_time = row.send_time
+                if isinstance(send_time, str):
+                    try:
+                        send_time = datetime.fromisoformat(send_time)  # 문자열을 datetime으로 변환
+                    except ValueError:
+                        send_time = None  # 변환 실패 시 None으로 처리
                 viewed_logs.append({
                     "timestamp": row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),
                     "email": row.email,
-                    "send_time": (row.send_time.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
-                                  if row.send_time else "발송 기록 없음"),
+                    "send_time": (send_time.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                                  if send_time else "발송 기록 없음"),
                     "ip": row.client_ip,
                     "user_agent": row.user_agent
                 })
+
 
             return render_template("logs.html", email_status=viewed_logs, feedback_message=None)
         except Exception as e:
