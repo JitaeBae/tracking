@@ -88,10 +88,11 @@ def track_email():
         existing_log = db.query(EmailLog).filter(
             and_(
                 EmailLog.email == email,
-                EmailLog.send_time == send_time,
+                EmailLog.send_time == send_time,  # send_time 비교 시 문제가 있을 수 있음
                 EmailLog.client_ip == client_ip
             )
         ).first()
+
         if existing_log:
             app.logger.info(f"track_email: Duplicate log detected - email={email}, IP={client_ip}")
             return send_file(create_pixel_image(), mimetype="image/png")
