@@ -1,11 +1,10 @@
 import os
 import requests
-from flask import Flask, request, send_file, render_template, jsonify, redirect, url_for, make_response
+from flask import Flask, request, send_file, render_template, jsonify, make_response
 from PIL import Image
 from datetime import datetime, timezone
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker, validates
-from apscheduler.schedulers.background import BackgroundScheduler
 from zoneinfo import ZoneInfo
 import logging
 import csv
@@ -13,27 +12,20 @@ import io
 
 # 로깅 설정
 logging.basicConfig(level=logging.DEBUG)
-logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
-logging.getLogger(__name__).setLevel(logging.DEBUG)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 
 # Flask 앱 생성
 app = Flask(__name__)
 
 # 한국 표준시(KST) 정의
-KST = ZoneInfo('Asia/Seoul')
+KST = ZoneInfo("Asia/Seoul")
 
 # 환경 변수 설정
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///email_logs.db")
 PIXEL_IMAGE_PATH = os.getenv("PIXEL_IMAGE_PATH", "/tmp/pixel.png")
 
 # SQLAlchemy 초기 설정
-engine = create_engine(DATABASE_URL, echo=True, pool_pre_ping=True, connect_args={
-    "sslmode": "require",
-    "keepalives": 1,
-    "keepalives_idle": 30,
-    "keepalives_interval": 10,
-    "keepalives_count": 5
-})
+engine = create_engine(DATABASE_URL, echo=True, pool_pre_ping=True)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -48,16 +40,14 @@ class EmailLog(Base):
     user_agent = Column(String)
 
 class EmailSendLog(Base):
-    __tablename__ = 'email_send_logs'
+    __tablename__ = "email_send_logs"
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String, nullable=False)
     send_time = Column(DateTime(timezone=True), nullable=False)  # 발송 시간 (UTC 저장)
 
     @validates("send_time")
     def validate_send_time(self, key, send_time):
-        """
-        발송 시간을 UTC로 변환하여 저장
-        """
+        """발송 시간을 UTC로 변환하여 저장"""
         if isinstance(send_time, str):
             send_time = datetime.strptime(send_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=KST).astimezone(timezone.utc)
         elif isinstance(send_time, datetime) and send_time.tzinfo is None:
@@ -79,13 +69,14 @@ def use_db_session(func):
     return wrapper
 
 def format_time_to_kst(time_value):
-    """
-    UTC 시간을 KST로 변환하고 포맷
-    """
-    if time_value:
-        if isinstance(time_value, str):
-            time_value = datetime.fromisoformat(time_value)
-        return time_value.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+    """UTC 시간을 KST로 변환하고 문자열로 포맷. 잘못된 값은 '발송 기록 없음'으로 대체."""
+    try:
+        if time_value:
+            if isinstance(time_value, str):
+                time_value = datetime.fromisoformat(time_value)
+            return time_value.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        pass
     return "발송 기록 없음"
 
 def get_or_create_pixel_image():
@@ -101,46 +92,14 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     app.logger.info("DB 테이블 생성 또는 확인 완료.")
 
-# DB 작업 함수
 @use_db_session
-def log_email(db, email, send_time):
-    """이메일 발송 기록 저장 (중복 방지)"""
-    existing_record = db.query(EmailSendLog).filter(
-        EmailSendLog.email == email,
-        EmailSendLog.send_time == send_time
-    ).first()
-
-    if existing_record:
-        app.logger.info(f"이미 존재하는 기록: 이메일={email}, 발송 시간={send_time}")
-        return  # 중복 데이터가 있으면 저장하지 않음
-
-    new_record = EmailSendLog(email=email, send_time=send_time)
-    db.add(new_record)
+def clean_invalid_send_time(db):
+    """DB에서 잘못된 send_time 값을 정리"""
+    invalid_logs = db.query(EmailLog).filter(EmailLog.send_time == "발송 기록 없음").all()
+    for log in invalid_logs:
+        log.send_time = None
     db.commit()
-    app.logger.info(f"새 발송 기록 저장: 이메일={email}, 발송 시간={send_time}")
-
-@use_db_session
-def track_email_log(db, email, client_ip, user_agent):
-    """이메일 열람 기록 저장 (UTC 일관성 보장)"""
-    timestamp = datetime.now(timezone.utc)  # 현재 열람 시간 (UTC)
-    send_time = get_email_send_time(db, email)  # UTC로 가져온 발송 시간
-    new_log = EmailLog(
-        timestamp=timestamp,
-        email=email,
-        send_time=send_time,  # 이미 UTC로 저장된 값 사용
-        client_ip=client_ip,
-        user_agent=user_agent
-    )
-    db.add(new_log)
-    db.commit()
-
-@use_db_session
-def get_email_send_time(db, email):
-    """DB에서 email에 해당하는 발송 시간을 UTC로 반환"""
-    record = db.query(EmailSendLog).filter(EmailSendLog.email == email).first()
-    if record:
-        return record.send_time  # 이미 UTC로 저장된 값 반환
-    return None
+    app.logger.info(f"잘못된 send_time 데이터 {len(invalid_logs)}건 정리 완료")
 
 # Flask 라우트
 @app.route("/", methods=["GET"])
@@ -157,7 +116,12 @@ def track_email():
         return "이메일 파라미터가 없습니다.", 400
 
     try:
-        track_email_log(email=email, client_ip=client_ip, user_agent=user_agent)
+        timestamp = datetime.now(timezone.utc)  # 현재 열람 시간 (UTC)
+        with SessionLocal() as db:
+            send_time = db.query(EmailSendLog.send_time).filter(EmailSendLog.email == email).scalar()
+            new_log = EmailLog(timestamp=timestamp, email=email, send_time=send_time, client_ip=client_ip, user_agent=user_agent)
+            db.add(new_log)
+            db.commit()
         return send_file(get_or_create_pixel_image(), mimetype="image/png")
     except Exception as e:
         app.logger.error(f"Tracking error: {e}")
@@ -174,11 +138,13 @@ def log_email_api():
         return jsonify({"error": "email과 send_time이 필요합니다."}), 400
 
     try:
-        # KST로 넘어온 시간을 UTC로 변환
         send_time = datetime.strptime(send_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=KST).astimezone(timezone.utc)
-
-        # 발송 기록 저장 (중복 방지 로직 포함)
-        log_email(email=email, send_time=send_time)
+        with SessionLocal() as db:
+            existing_record = db.query(EmailSendLog).filter(EmailSendLog.email == email, EmailSendLog.send_time == send_time).first()
+            if not existing_record:
+                new_record = EmailSendLog(email=email, send_time=send_time)
+                db.add(new_record)
+                db.commit()
         return jsonify({"message": "이메일 발송 기록 저장 완료"}), 200
     except Exception as e:
         app.logger.error(f"Log Email API error: {e}")
@@ -188,37 +154,25 @@ def log_email_api():
 @use_db_session
 def view_logs(db):
     """DB의 열람 기록을 조회하여 KST로 변환 후 표시"""
-    try:
-        logs = db.query(EmailLog).all()
-        if not logs:
-            return render_template("logs.html", email_status=[], feedback_message="No logs available.")
+    logs = db.query(EmailLog).all()
+    viewed_logs = []
+    for row in logs:
+        viewed_logs.append({
+            "timestamp": format_time_to_kst(row.timestamp),
+            "email": row.email,
+            "send_time": format_time_to_kst(row.send_time),
+            "ip": row.client_ip,
+            "user_agent": row.user_agent,
+        })
+    return jsonify(viewed_logs)
 
-        viewed_logs = []
-        for row in logs:
-            viewed_logs.append({
-                "timestamp": format_time_to_kst(row.timestamp),  # 열람 시간 UTC -> KST
-                "email": row.email,
-                "send_time": format_time_to_kst(row.send_time),  # 발송 시간 UTC -> KST
-                "ip": row.client_ip,
-                "user_agent": row.user_agent
-            })
-
-        return render_template("logs.html", email_status=viewed_logs, feedback_message=None)
-
-    except Exception as e:
-        app.logger.error(f"로그 조회 오류: {e}")
-        return render_template("logs.html", email_status=[], feedback_message="An error occurred while fetching logs."), 500
-
-@app.route("/download_log", methods=["GET"], endpoint="download_log")
+@app.route("/download_log", methods=["GET"])
 @use_db_session
 def download_log(db):
     """열람 기록을 CSV 파일로 다운로드"""
     logs = db.query(EmailLog).all()
-    if not logs:
-        return "No log records to download.", 200
-
     output = io.StringIO()
-    writer = csv.writer(output, lineterminator='\n')
+    writer = csv.writer(output, lineterminator="\n")
     writer.writerow(["Timestamp (KST)", "Email", "Send Time (KST)", "Client IP", "User-Agent"])
     for row in logs:
         writer.writerow([
@@ -226,10 +180,9 @@ def download_log(db):
             row.email,
             format_time_to_kst(row.send_time),
             row.client_ip,
-            row.user_agent
+            row.user_agent,
         ])
     output.seek(0)
-
     response = make_response(output.read())
     response.headers["Content-Disposition"] = "attachment; filename=email_tracking_log.csv"
     response.headers["Content-Type"] = "text/csv"
@@ -239,6 +192,7 @@ def download_log(db):
 def initialize_application():
     init_db()
     get_or_create_pixel_image()
+    clean_invalid_send_time()  # 잘못된 데이터 정리
 
 initialize_application()
 
