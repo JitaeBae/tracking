@@ -76,7 +76,7 @@ class EmailLog(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     timestamp = Column(DateTime, nullable=False)
     email = Column(String, nullable=False)
-    send_time = Column(String)   # 과거 CSV에선 문자열로 기록
+    send_time = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     client_ip = Column(String)
     user_agent = Column(String)
 
@@ -155,7 +155,7 @@ def get_email_send_time(email):
     with SessionLocal() as db:
         record = db.query(EmailSendLog).filter(EmailSendLog.email == email).first()
         if record:
-            return record.send_time.isoformat()
+            return record.send_time
         else:
             return "발송 기록 없음"
 
