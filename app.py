@@ -246,18 +246,23 @@ def view_logs():
                 return render_template("logs.html", email_status=[], feedback_message="No logs available.")
 
             viewed_logs = []
+            
             for row in logs:
                 # send_time을 ISO 형식으로 변환 가능 여부 확인
                 try:
-                    send_time_kst = (
-                        datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
-                        if row.send_time and row.send_time != "발송 기록 없음"
-                        else "발송 기록 없음"
-                    )
+                    if row.send_time and row.send_time != "발송 기록 없음":
+                        if isinstance(row.send_time, datetime):
+                            # 이미 datetime 객체인 경우
+                            send_time_kst = row.send_time.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                        else:
+                            # 문자열인 경우 datetime 객체로 변환
+                            send_time_kst = datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                    else:
+                        send_time_kst = "발송 기록 없음"
                 except Exception as e:
                     app.logger.warning(f"Invalid send_time format for email '{row.email}': {row.send_time}. Error: {e}")
                     send_time_kst = "발송 기록 없음"
-
+            
                 viewed_logs.append({
                     "timestamp": row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),  # UTC -> KST 변환
                     "email": row.email,
@@ -265,6 +270,7 @@ def view_logs():
                     "ip": row.client_ip,
                     "user_agent": row.user_agent
                 })
+
 
             return render_template("logs.html", email_status=viewed_logs, feedback_message=None)
 
@@ -287,25 +293,40 @@ def download_log():
                 app.logger.info("다운로드할 로그 레코드가 없습니다.")
                 return "No log records to download.", 200
 
-            # 메모리에 CSV 작성
-            output = io.StringIO()
-            writer = csv.writer(output, lineterminator='\n')
+                # 메모리에 CSV 작성
+                output = io.StringIO()
+                writer = csv.writer(output, lineterminator='\n')
+                
+                # 헤더 작성
+                writer.writerow(["Timestamp (KST)", "Email", "Send Time (KST)", "Client IP", "User-Agent"])
+                
+                # 데이터 작성
+                for row in logs:
+                    try:
+                        # send_time 타입 확인 및 변환
+                        if row.send_time:
+                            if isinstance(row.send_time, datetime):
+                                send_time_kst = row.send_time.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                            else:
+                                send_time_kst = datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                        else:
+                            send_time_kst = "N/A"
+                    except Exception as e:
+                        app.logger.warning(f"Invalid send_time format for email '{row.email}': {row.send_time}. Error: {e}")
+                        send_time_kst = "N/A"
+                
+                    # 각 행 작성
+                    writer.writerow([
+                        row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),  # Timestamp 변환
+                        row.email,  # Email
+                        send_time_kst,  # Send Time (KST)
+                        row.client_ip,  # Client IP
+                        row.user_agent  # User-Agent
+                    ])
+                
+                # 메모리 스트림의 위치를 처음으로 이동
+                output.seek(0)
 
-            # 헤더
-            writer.writerow(["Timestamp (KST)", "Email", "Send Time (KST)", "Client IP", "User-Agent"])
-
-            # 데이터
-            for row in logs:
-                writer.writerow([
-                    row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),
-                    row.email,
-                    (datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
-                     if row.send_time else "N/A"),
-                    row.client_ip,
-                    row.user_agent
-                ])
-
-            output.seek(0)
 
             # Flask 응답으로 CSV 파일 전송
             response = make_response(output.read())
