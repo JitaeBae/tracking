@@ -104,12 +104,20 @@ def init_db():
 # DB 작업 함수
 @use_db_session
 def log_email(db, email, send_time):
-    """이메일 발송 기록 저장 (UTC 변환)"""
-    if isinstance(send_time, str):
-        send_time = datetime.strptime(send_time, "%Y-%m-%d %H:%M:%S").replace(tzinfo=KST).astimezone(timezone.utc)
+    """이메일 발송 기록 저장 (중복 방지)"""
+    existing_record = db.query(EmailSendLog).filter(
+        EmailSendLog.email == email,
+        EmailSendLog.send_time == send_time
+    ).first()
+
+    if existing_record:
+        app.logger.info(f"이미 존재하는 기록: 이메일={email}, 발송 시간={send_time}")
+        return  # 중복 데이터가 있으면 저장하지 않음
+
     new_record = EmailSendLog(email=email, send_time=send_time)
     db.add(new_record)
     db.commit()
+    app.logger.info(f"새 발송 기록 저장: 이메일={email}, 발송 시간={send_time}")
 
 @use_db_session
 def track_email_log(db, email, client_ip, user_agent):
@@ -169,7 +177,7 @@ def log_email_api():
         # KST로 넘어온 시간을 UTC로 변환
         send_time = datetime.strptime(send_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=KST).astimezone(timezone.utc)
 
-        # 발송 기록 저장
+        # 발송 기록 저장 (중복 방지 로직 포함)
         log_email(email=email, send_time=send_time)
         return jsonify({"message": "이메일 발송 기록 저장 완료"}), 200
     except Exception as e:
