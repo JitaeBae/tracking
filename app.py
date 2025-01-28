@@ -75,6 +75,7 @@ def use_db_session(func):
                 db.rollback()
                 app.logger.error(f"DB 작업 오류: {e}")
                 raise e
+    wrapper.__name__ = func.__name__  # 엔드포인트 이름 충돌 방지
     return wrapper
 
 def format_time_to_kst(time_value):
@@ -200,7 +201,7 @@ def view_logs(db):
         app.logger.error(f"로그 조회 오류: {e}")
         return render_template("logs.html", email_status=[], feedback_message="An error occurred while fetching logs."), 500
 
-@app.route("/download_log", methods=["GET"])
+@app.route("/download_log", methods=["GET"], endpoint="download_log")
 @use_db_session
 def download_log(db):
     """열람 기록을 CSV 파일로 다운로드"""
