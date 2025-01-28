@@ -62,6 +62,7 @@ def create_pixel_image():
 def get_email_send_time(email):
     with SessionLocal() as db:
         record = db.query(EmailSendLog).filter(EmailSendLog.email == email).first()
+        app.logger.debug(f"get_email_send_time: email={email}, send_time={record.send_time if record else None}")
         return record.send_time if record else None
 
 # 라우트 정의
@@ -78,7 +79,9 @@ def track_email():
     if not email:
         return "이메일 파라미터가 없습니다.", 400
 
-    send_time = get_email_send_time(email)
+    timestamp = datetime.now(timezone.utc)  # 현재 UTC 시간
+    send_time = get_email_send_time(email)  # 발송 시간 조회
+    app.logger.debug(f"track_email: email={email}, send_time={send_time}, client_ip={client_ip}")
 
     with SessionLocal() as db:
         # 중복 기록 방지
@@ -90,11 +93,12 @@ def track_email():
             )
         ).first()
         if existing_log:
-            app.logger.info(f"중복 기록 방지: {email}, IP: {client_ip}")
+            app.logger.info(f"track_email: Duplicate log detected - email={email}, IP={client_ip}")
             return send_file(create_pixel_image(), mimetype="image/png")
 
         # 새로운 로그 추가
         try:
+            app.logger.debug(f"track_email: Preparing to save log - email={email}, send_time={send_time}, IP={client_ip}")
             new_log = EmailLog(
                 timestamp=timestamp,
                 email=email,
@@ -104,10 +108,10 @@ def track_email():
             )
             db.add(new_log)
             db.commit()
-            app.logger.info(f"이메일 열람 기록 저장: {email}, 발송 시간: {send_time}, IP: {client_ip}")
+            app.logger.info(f"track_email: Log saved - email={email}, send_time={send_time}, IP={client_ip}")
         except Exception as e:
             db.rollback()
-            app.logger.error(f"열람 기록 저장 오류: {e}")
+            app.logger.error(f"track_email: Error saving log - {e}")
             return "열람 기록 저장 오류", 500
 
     return send_file(create_pixel_image(), mimetype="image/png")
