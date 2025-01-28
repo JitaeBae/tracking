@@ -10,7 +10,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # ========= SQLAlchemy & DB 연결 설정 =========
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.orm import validates 
+from sqlalchemy.orm import validates
+from sqlalchemy import event  # SQLAlchemy 이벤트 모듈
+from sqlalchemy.orm import Session
 import logging
 
 # 로깅 설정
