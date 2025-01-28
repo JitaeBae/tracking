@@ -2,14 +2,11 @@ import os
 import requests
 from flask import Flask, request, send_file, render_template, jsonify, redirect, url_for, make_response
 from PIL import Image
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from apscheduler.schedulers.background import BackgroundScheduler
-from zoneinfo import ZoneInfo  
-
-# ========= SQLAlchemy & DB 연결 설정 =========
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
+from zoneinfo import ZoneInfo
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, and_
 from sqlalchemy.orm import declarative_base, sessionmaker
-from sqlalchemy.orm import validates 
 import logging
 
 # 로깅 설정
@@ -23,170 +20,85 @@ app = Flask(__name__)
 # 한국 표준시(KST) 정의
 KST = ZoneInfo('Asia/Seoul')
 
-# ------------------------
-# 1. 환경 변수/타임존/기타
-# ------------------------
-DATABASE_URL = os.getenv("DATABASE_URL")  # 예: "postgresql://user:pass@host:port/db"
+# 환경 변수
+DATABASE_URL = os.getenv("DATABASE_URL")
+PIXEL_IMAGE_PATH = os.getenv("PIXEL_IMAGE_PATH", "/tmp/pixel.png")
 
-# (과거 CSV 파일 이름이었지만, DB 사용으로 대체)
-LOG_FILE = os.getenv("LOG_FILE_PATH", "email_tracking_log.csv")
-SEND_LOG_FILE = os.getenv("SEND_LOG_FILE_PATH", "email_send_log.csv")
-
-# -----------------------
-# 2. SQLAlchemy 초기 설정
-# -----------------------
-engine = create_engine(DATABASE_URL, echo=True, connect_args={
-        "sslmode": "require",
-        "keepalives": 1,
-        "keepalives_idle": 30,
-        "keepalives_interval": 10,
-        "keepalives_count": 5
-    })  # echo=True로 하면 SQL 로그가 콘솔에 출력
+# SQLAlchemy 초기화
+engine = create_engine(DATABASE_URL, echo=True, connect_args={"sslmode": "require"})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# -----------------------------
-# 3. DB 테이블(ORM 모델) 정의
-# -----------------------------
+# DB 테이블 정의
 class EmailLog(Base):
     __tablename__ = "email_logs"
     id = Column(Integer, primary_key=True, autoincrement=True)
-    timestamp = Column(DateTime, nullable=False)
+    timestamp = Column(DateTime, nullable=False)  # 열람 시간 (UTC)
     email = Column(String, nullable=False)
-    send_time = Column(String)   # 과거 CSV에선 문자열로 기록
-    client_ip = Column(String)
-    user_agent = Column(String)
-
-class EmailSendLog(Base):
-    __tablename__ = 'email_send_logs'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    email = Column(String, nullable=False)
-    send_time = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    send_time = Column(DateTime, nullable=True)  # 발송 시간 (UTC)
     client_ip = Column(String, nullable=False)
     user_agent = Column(String, nullable=False)
 
-@validates("send_time")
-def validate_send_time(self, key, send_time):
-    logger = logging.getLogger(__name__)
+class EmailSendLog(Base):
+    __tablename__ = 'email_send_logs'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String, nullable=False)
+    send_time = Column(DateTime, nullable=False)  # 발송 시간 (UTC)
 
-    # 문자열인 경우 처리
-    if isinstance(send_time, str):
-        try:
-            # 문자열을 datetime으로 변환
-            send_time = datetime.strptime(send_time, "%Y-%m-%d %H:%M:%S")
-            send_time = send_time.replace(tzinfo=KST)  # KST로 설정
-            send_time = send_time.astimezone(timezone.utc)  # UTC로 변환
-            logger.debug(f"Converted send_time to UTC: {send_time}")
-        except ValueError:
-            logger.error("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
-            raise ValueError("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
-
-    # datetime 객체인 경우 처리
-    elif isinstance(send_time, datetime):
-        if send_time.tzinfo is None:  # 시간대 정보가 없으면 KST로 설정
-            send_time = send_time.replace(tzinfo=KST)
-            send_time = send_time.astimezone(timezone.utc)
-            logger.debug(f"Applied KST timezone and converted to UTC: {send_time}")
-
-    # 다른 데이터 타입인 경우 예외 처리
-    else:
-        logger.error(f"Invalid type for send_time: {type(send_time)}")
-        raise TypeError("send_time must be a string in 'YYYY-MM-DD HH:MM:SS' format or a datetime object.")
-
-    # 현재 UTC 시간과 비교
-    current_time = datetime.now(timezone.utc)
-    logger.debug(f"Current time (UTC): {current_time}, send_time: {send_time}")
-
-    if send_time > current_time:
-        logger.error("send_time cannot be in the future.")
-        raise ValueError("send_time cannot be in the future.")
-
-    return send_time
-
-
-# ---------------------
-# 4. DB 초기화 함수
-# ---------------------
+# DB 초기화
 def init_db():
     Base.metadata.create_all(bind=engine)
-    app.logger.info("DB 테이블 생성(또는 이미 존재).")
+    app.logger.info("DB 테이블 생성 완료.")
 
-# -------------------------
-# 5. 유틸리티 / 일반 함수
-# -------------------------
+# 픽셀 이미지 생성
 def create_pixel_image():
-    """픽셀 이미지를 생성하여 /tmp/pixel.png 경로에 저장, 경로 반환"""
-    pixel_path = os.getenv("PIXEL_IMAGE_PATH", "/tmp/pixel.png")
-    if not os.path.exists(pixel_path):
-        try:
-            pixel_image = Image.new("RGB", (1, 1), (255, 255, 255))
-            pixel_image.save(pixel_path)
-            app.logger.info("픽셀 이미지 생성 완료")
-        except Exception as e:
-            app.logger.error(f"픽셀 이미지 생성 오류: {e}")
-    return pixel_path
+    if not os.path.exists(PIXEL_IMAGE_PATH):
+        pixel_image = Image.new("RGB", (1, 1), (255, 255, 255))
+        pixel_image.save(PIXEL_IMAGE_PATH)
+        app.logger.info("픽셀 이미지 생성 완료.")
+    return PIXEL_IMAGE_PATH
 
+# 이메일 발송 시간 조회
 def get_email_send_time(email):
-    """DB에서 email에 해당하는 발송 시간을 찾거나, 없으면 '발송 기록 없음'"""
     with SessionLocal() as db:
         record = db.query(EmailSendLog).filter(EmailSendLog.email == email).first()
-        if record:
-            return record.send_time.isoformat()
-        else:
-            return "발송 기록 없음"
+        app.logger.debug(f"get_email_send_time: email={email}, send_time={record.send_time if record else None}")
+        return record.send_time if record else None
 
-def log_email_send(email):
-    """이메일 발송 기록 저장 (과거 CSV -> DB)"""
-    with SessionLocal() as db:
-        try:
-            send_time = datetime.now(timezone.utc).isoformat()
-            new_record = EmailSendLog(email=email, send_time=send_time)
-            db.add(new_record)
-            db.commit()
-            app.logger.info(f"이메일 발송 기록 저장: {email}, 발송 시간: {send_time}")
-        except Exception as e:
-            db.rollback()
-            app.logger.error(f"이메일 발송 기록 오류: {e}")
-
-# -----------------
-# 6. 라우트 정의
-# -----------------
-
+# 라우트 정의
 @app.route("/", methods=["GET"])
 def home():
-    """서버 상태 확인"""
-    app.logger.info("홈 라우트에 접근했습니다.")
-    return jsonify({"status": "running", "message": "이메일 트래킹 시스템이 실행 중입니다."}), 200
-
-@app.route('/favicon.ico')
-def favicon():
-    return send_from_directory(
-        os.path.join(app.root_path, 'static'),
-        'favicon.ico',
-        mimetype='image/vnd.microsoft.icon'
-    )
+    return jsonify({"status": "running", "message": "이메일 트래킹 시스템 실행 중"}), 200
 
 @app.route("/track", methods=["GET"])
 def track_email():
-    """이메일 열람 트래킹 (DB에 저장)"""
     client_ip = request.remote_addr
     user_agent = request.headers.get("User-Agent")
     email = request.args.get("email")
 
     if not email:
-        app.logger.warning("이메일 파라미터가 없습니다.")
         return "이메일 파라미터가 없습니다.", 400
 
-    # UTC 타임스탬프
-    timestamp = datetime.now(timezone.utc)
-        
-    # 이메일 발송 시간 조회
-    send_time = get_email_send_time(email)
+    timestamp = datetime.now(timezone.utc)  # 현재 UTC 시간
+    send_time = get_email_send_time(email)  # 발송 시간 조회
+    app.logger.debug(f"track_email: email={email}, send_time={send_time}, client_ip={client_ip}")
 
-    # DB에 기록
     with SessionLocal() as db:
+        # 중복 기록 방지
+        existing_log = db.query(EmailLog).filter(
+            and_(
+                EmailLog.email == email,
+                EmailLog.send_time == send_time,
+                EmailLog.client_ip == client_ip
+            )
+        ).first()
+        if existing_log:
+            app.logger.info(f"track_email: Duplicate log detected - email={email}, IP={client_ip}")
+            return send_file(create_pixel_image(), mimetype="image/png")
+
+        # 새로운 로그 추가
         try:
+            app.logger.debug(f"track_email: Preparing to save log - email={email}, send_time={send_time}, IP={client_ip}")
             new_log = EmailLog(
                 timestamp=timestamp,
                 email=email,
@@ -196,127 +108,61 @@ def track_email():
             )
             db.add(new_log)
             db.commit()
-            app.logger.info(f"Tracking email: {email}, Send Time: {send_time}, IP: {client_ip}")
+            app.logger.info(f"track_email: Log saved - email={email}, send_time={send_time}, IP={client_ip}")
         except Exception as e:
             db.rollback()
-            app.logger.error(f"열람 기록 저장 오류: {e}")
+            app.logger.error(f"track_email: Error saving log - {e}")
             return "열람 기록 저장 오류", 500
 
-    # 픽셀 이미지 반환
     return send_file(create_pixel_image(), mimetype="image/png")
 
 @app.route("/logs", methods=["GET", "POST"])
 def view_logs():
-    """열람 기록 보기 (GET) / 초기화 (POST)"""
     with SessionLocal() as db:
         try:
             if request.method == "POST":
-                # 전체 로그 삭제
                 db.query(EmailLog).delete()
+                db.query(EmailSendLog).delete()
                 db.commit()
                 app.logger.info("로그 데이터 초기화 완료.")
                 return redirect(url_for("view_logs"))
 
-            # GET: 로그 조회
             logs = db.query(EmailLog).all()
             if not logs:
                 return render_template("logs.html", email_status=[], feedback_message="No logs available.")
 
             viewed_logs = []
             for row in logs:
-                # send_time을 ISO 형식으로 변환 가능 여부 확인
-                try:
-                    send_time_kst = (
-                        datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
-                        if row.send_time and row.send_time != "발송 기록 없음"
-                        else "발송 기록 없음"
-                    )
-                except Exception as e:
-                    app.logger.warning(f"Invalid send_time format for email '{row.email}': {row.send_time}. Error: {e}")
-                    send_time_kst = "발송 기록 없음"
-
                 viewed_logs.append({
-                    "timestamp": row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),  # UTC -> KST 변환
+                    "timestamp": row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),
                     "email": row.email,
-                    "send_time": send_time_kst,
+                    "send_time": (row.send_time.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                                  if row.send_time else "발송 기록 없음"),
                     "ip": row.client_ip,
                     "user_agent": row.user_agent
                 })
 
             return render_template("logs.html", email_status=viewed_logs, feedback_message=None)
-
         except Exception as e:
             app.logger.error(f"로그 조회 오류: {e}")
-            return render_template("logs.html", email_status=[], feedback_message="An error occurred while fetching logs."), 500
-
-
-
-@app.route("/download_log", methods=["GET"])
-def download_log():
-    """트래킹 로그를 CSV 파일 형태로 다운로드 (DB -> 메모리 -> 응답)"""
-    import csv
-    import io
-
-    with SessionLocal() as db:
-        try:
-            logs = db.query(EmailLog).all()
-            if not logs:
-                app.logger.info("다운로드할 로그 레코드가 없습니다.")
-                return "No log records to download.", 200
-
-            # 메모리에 CSV 작성
-            output = io.StringIO()
-            writer = csv.writer(output, lineterminator='\n')
-
-            # 헤더
-            writer.writerow(["Timestamp (KST)", "Email", "Send Time (KST)", "Client IP", "User-Agent"])
-
-            # 데이터
-            for row in logs:
-                writer.writerow([
-                    row.timestamp.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S"),
-                    row.email,
-                    (datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
-                     if row.send_time else "N/A"),
-                    row.client_ip,
-                    row.user_agent
-                ])
-
-            output.seek(0)
-
-            # Flask 응답으로 CSV 파일 전송
-            response = make_response(output.read())
-            response.headers["Content-Disposition"] = "attachment; filename=email_tracking_log.csv"
-            response.headers["Content-Type"] = "text/csv"
-            app.logger.info("CSV 파일 다운로드 성공.")
-            return response
-        except Exception as e:
-            app.logger.error(f"CSV 다운로드 오류: {e}")
-            return "CSV 다운로드 오류", 500
-
+            return render_template("logs.html", email_status=[], feedback_message="An error occurred."), 500
 
 @app.route("/log-email", methods=["POST"])
 def log_email():
-    """이메일 발송 기록 저장"""
     data = request.json
     email = data.get("email")
-    send_time_str = data.get("send_time")  # 클라이언트에서 전달된 send_time
+    send_time_str = data.get("send_time")
 
-    app.logger.debug(f"Received email: {email}, send_time_str: {send_time_str}")
-
-    # 필수 필드 확인
     if not email or not send_time_str:
-        app.logger.warning("Missing email or send_time_str")
         return jsonify({"error": "email과 send_time이 필요합니다."}), 400
 
-    # 발송 기록 저장
     with SessionLocal() as db:
         try:
-            new_record = EmailSendLog(email=email, send_time=send_time_str)
+            send_time = datetime.fromisoformat(send_time_str).replace(tzinfo=KST).astimezone(timezone.utc)
+            new_record = EmailSendLog(email=email, send_time=send_time)
             db.add(new_record)
             db.commit()
-            app.logger.info("이메일 발송 기록 저장 완료.")
-            return jsonify({"message": "이메일 발송 기록이 저장되었습니다."}), 200
+            return jsonify({"message": "이메일 발송 기록 저장 완료"}), 200
         except Exception as e:
             db.rollback()
             app.logger.error(f"이메일 발송 기록 저장 오류: {e}")
@@ -324,50 +170,14 @@ def log_email():
 
 @app.errorhandler(500)
 def internal_server_error(e):
-    app.logger.error(f"Server error: {e}")
     return jsonify({"error": "An internal server error occurred"}), 500
 
-# ---------------------
-# 7. 핑 & 스케줄
-# ---------------------
-def ping_server():
-    """서버 상태를 확인하는 핑 기능"""
-    server_url = os.getenv("SERVER_URL", "https://tracking-g39r.onrender.com")
-    try:
-        app.logger.debug(f"핑 전송 시도 중: {server_url}")
-        response = requests.get(server_url)
-        if response.status_code == 200:
-            app.logger.info(f"핑 전송 성공: {response.status_code}")
-        else:
-            app.logger.warning(f"핑 전송 실패: {response.status_code}")
-    except Exception as e:
-        app.logger.error(f"핑 전송 오류: {e}")
-
-def schedule_tasks():
-    """APScheduler로 주기적인 작업을 설정"""
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(ping_server, 'interval', minutes=10)  # 10분마다 ping
-    scheduler.start()
-    app.logger.info("APScheduler를 통해 작업이 스케줄링되었습니다.")
-    scheduler.print_jobs()
-
-# ----------------------
-# 8. 애플리케이션 초기화
-# ----------------------
+# 서버 초기화
 def initialize_application():
-    """애플리케이션 초기화 작업"""
-    # DB 테이블 생성
     init_db()
-
-    # 픽셀 이미지 생성
     create_pixel_image()
 
-    # 스케줄링
-    schedule_tasks()
-    
 initialize_application()
-# -------------------
-# 9. 앱 실행 (로컬)
-# -------------------
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
