@@ -105,7 +105,7 @@ def validate_send_time(self, key, send_time):
             # 문자열을 datetime으로 변환
             send_time = datetime.strptime(send_time, "%Y-%m-%d %H:%M:%S")
             send_time = send_time.replace(tzinfo=KST)  # KST로 설정
-            send_time = send_time.astimezone(timezone.utc)  # UTC로 변환
+        #   send_time = send_time.astimezone(timezone.utc)  # UTC로 변환
             logger.debug(f"Converted send_time to UTC: {send_time}")
         except ValueError:
             logger.error("send_time must be in 'YYYY-MM-DD HH:MM:SS' format.")
@@ -115,7 +115,7 @@ def validate_send_time(self, key, send_time):
     elif isinstance(send_time, datetime):
         if send_time.tzinfo is None:  # 시간대 정보가 없으면 KST로 설정
             send_time = send_time.replace(tzinfo=KST)
-            send_time = send_time.astimezone(timezone.utc)
+         #  send_time = send_time.astimezone(timezone.utc)
             logger.debug(f"Applied KST timezone and converted to UTC: {send_time}")
 
     # 다른 데이터 타입인 경우 예외 처리
