@@ -161,7 +161,7 @@ def get_email_send_time(email):
     with SessionLocal() as db:
         db.expire_all()
 
-        방법 A) id가 높은 것이 최신이라고 가정할 경우
+        # 방법 A) id가 높은 것이 최신이라고 가정할 경우
         record = (
             db.query(EmailSendLog)
             .filter(EmailSendLog.email == email)
