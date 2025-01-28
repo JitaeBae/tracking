@@ -261,6 +261,7 @@ def view_logs():
             if request.method == "POST":
                 # 전체 로그 삭제
                 db.query(EmailLog).delete()
+                db.query(EmailSendLog).delete()
                 db.commit()
                 app.logger.info("로그 데이터 초기화 완료.")
                 return redirect(url_for("view_logs"))
