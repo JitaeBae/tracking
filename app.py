@@ -332,7 +332,7 @@ def download_log():
                         # send_time 타입 확인 및 변환
                         if row.send_time:
                             if isinstance(row.send_time, datetime):
-                                send_time_kst = row.send_time.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
+                                send_time_kst = row.send_time.strftime("%Y-%m-%d %H:%M:%S")
                             else:
                                 send_time_kst = datetime.fromisoformat(row.send_time).astimezone(KST).strftime("%Y-%m-%d %H:%M:%S")
                         else:
