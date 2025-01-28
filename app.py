@@ -64,6 +64,10 @@ SessionLocal = sessionmaker(
     bind=engine
 )
 
+# 세션 이벤트 등록
+@event.listens_for(Session, "after_begin")
+def after_begin(session, transaction, connection):
+    session.expire_all()  # 세션 캐시 무효화
 # 베이스 클래스 정의
 Base = declarative_base()
 
