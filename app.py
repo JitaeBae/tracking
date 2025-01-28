@@ -161,21 +161,21 @@ def get_email_send_time(email):
     with SessionLocal() as db:
         db.expire_all()
 
-        # 방법 A) id가 높은 것이 최신이라고 가정할 경우
-        # record = (
-        #     db.query(EmailSendLog)
-        #     .filter(EmailSendLog.email == email)
-        #     .order_by(EmailSendLog.id.desc())
-        #     .first()
-        # )
-        
-        # 방법 B) send_time이 가장 최근인 레코드
+        방법 A) id가 높은 것이 최신이라고 가정할 경우
         record = (
             db.query(EmailSendLog)
             .filter(EmailSendLog.email == email)
-            .order_by(EmailSendLog.send_time.desc())
+            .order_by(EmailSendLog.id.desc())
             .first()
         )
+        
+        # 방법 B) send_time이 가장 최근인 레코드
+        # record = (
+        #    db.query(EmailSendLog)
+        #    .filter(EmailSendLog.email == email)
+        #    .order_by(EmailSendLog.send_time.desc())
+        #    .first()
+        #)
 
         if record:
             return record.send_time
